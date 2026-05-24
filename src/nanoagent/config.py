@@ -18,6 +18,10 @@ class LLMProviderConfig:
 class AgentConfig:
     default_provider: str = os.getenv("DEFAULT_PROVIDER", "openai")
     project_path: Optional[str] = os.getenv("PROJECT_PATH") or None
+    review_enabled: bool = os.getenv("MEMORY_REVIEW_ENABLED", "true").lower() == "true"
+    flush_min_turns: int = int(os.getenv("MEMORY_FLUSH_MIN_TURNS", "6"))
+    nudge_interval: int = int(os.getenv("MEMORY_NUDGE_INTERVAL", "10"))
+    nudge_tool_calls: int = int(os.getenv("MEMORY_NUDGE_TOOL_CALLS", "15"))
     providers: dict = field(default_factory=lambda: {
         "openai": LLMProviderConfig(
             api_key=os.getenv("OPENAI_API_KEY", ""),

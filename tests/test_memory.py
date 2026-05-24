@@ -117,6 +117,32 @@ def test_search(memory_store):
     )
     assert len(results) == 2
 
-def search_and_recall(self):
-        # This test is just to show that we can chain operations
-        pass
+def test_char_count_and_formatting(memory_store):
+    memory_store.add("memory", "global", "k1", "Short value")
+    memory_store.add("memory", "global", "k2", "Another global entry")
+    memory_store.add("memory", "project", "k3", "Project specific entry", project_path="/fake/project")
+
+    assert memory_store.char_count("memory", "global") == len("Short value") + len("Another global entry")
+    assert memory_store.char_count("memory", "project", "/fake/project") == len("Project specific entry")
+
+    # Formatting system prompt
+    formatted = memory_store.format_for_system_prompt("memory")
+    assert "Short value" in formatted
+    assert "Another global entry" in formatted
+    assert "Project specific entry" not in formatted
+
+    formatted_project = memory_store.format_project_block("memory", "/fake/project")
+    assert "Project specific entry" in formatted_project
+    assert "Short value" not in formatted_project
+
+def test_char_limits_enforced(memory_store):
+    # Enforce limit of 5000 chars by default, but let's test with a mock small limit if possible.
+    # We can just change the limit in test or insert large value to trigger limit
+    import unittest.mock
+    with unittest.mock.patch.object(memory_store, '_char_limit', return_value=30):
+        memory_store.add("memory", "global", "k1", "1234567890")
+        memory_store.add("memory", "global", "k2", "1234567890")
+        # Total is 20. Adding another 15 should exceed limit of 30.
+        with pytest.raises(ValueError) as excinfo:
+            memory_store.add("memory", "global", "k3", "123456789012345")
+        assert "Memory full" in str(excinfo.value)

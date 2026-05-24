@@ -53,6 +53,10 @@ class SQLiteMemoryStore:
         self.conn: sqlite3.Connection | None = None
         self._connect()
         self._create_tables()
+        self._consolidator = None
+
+    def set_consolidator(self, fn) -> None:
+        self._consolidator = fn
 
     def _connect(self):
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -170,6 +174,86 @@ class SQLiteMemoryStore:
             last_referenced=row["last_referenced"],
         )
 
+    def _char_limit(self, target: str) -> int:
+        from .constants import DEFAULT_MEMORY_CHAR_LIMIT, DEFAULT_USER_CHAR_LIMIT, DEFAULT_FAILURE_CHAR_LIMIT
+        if target == "failure":
+            return DEFAULT_FAILURE_CHAR_LIMIT
+        elif target == "user":
+            return DEFAULT_USER_CHAR_LIMIT
+        return DEFAULT_MEMORY_CHAR_LIMIT
+
+    def char_count(self, target: str, scope: str = "global", project_path: str | None = None) -> int:
+        """Get total character count of entries for target and scope/project."""
+        project_id = None
+        if scope == "project" and project_path:
+            project_id = self._get_project_id(project_path)
+        
+        if project_id is not None:
+            cursor = self.conn.execute(
+                "SELECT SUM(LENGTH(content)) FROM memories WHERE target = ? AND project = ?",
+                (target, project_id)
+            )
+        else:
+            cursor = self.conn.execute(
+                "SELECT SUM(LENGTH(content)) FROM memories WHERE target = ? AND project IS NULL",
+                (target,)
+            )
+        row = cursor.fetchone()
+        return row[0] if row and row[0] is not None else 0
+
+    def format_for_system_prompt(self, target: str, char_limit: int = 5000) -> str:
+        """Format global entries of a target with ENTRY_DELIMITER, respecting char_limit."""
+        cursor = self.conn.execute(
+            "SELECT content FROM memories WHERE target = ? AND project IS NULL ORDER BY last_referenced DESC",
+            (target,)
+        )
+        entries = [row["content"] for row in cursor.fetchall()]
+        
+        selected_entries = []
+        current_len = 0
+        from .constants import ENTRY_DELIMITER
+        
+        for entry in entries:
+            entry_len = len(entry)
+            needed = entry_len
+            if selected_entries:
+                needed += len(ENTRY_DELIMITER)
+            
+            if current_len + needed <= char_limit:
+                selected_entries.append(entry)
+                current_len += needed
+            else:
+                break
+                
+        return ENTRY_DELIMITER.join(selected_entries)
+
+    def format_project_block(self, target: str, project_path: str, char_limit: int = 5000) -> str:
+        """Format project-scoped entries of a target for the given project path with ENTRY_DELIMITER, respecting char_limit."""
+        project_id = self._get_project_id(project_path)
+        cursor = self.conn.execute(
+            "SELECT content FROM memories WHERE target = ? AND project = ? ORDER BY last_referenced DESC",
+            (target, project_id)
+        )
+        entries = [row["content"] for row in cursor.fetchall()]
+        
+        selected_entries = []
+        current_len = 0
+        from .constants import ENTRY_DELIMITER
+        
+        for entry in entries:
+            entry_len = len(entry)
+            needed = entry_len
+            if selected_entries:
+                needed += len(ENTRY_DELIMITER)
+            
+            if current_len + needed <= char_limit:
+                selected_entries.append(entry)
+                current_len += needed
+            else:
+                break
+                
+        return ENTRY_DELIMITER.join(selected_entries)
+
     # ─── Backward-compatible API ───
 
     def add(self, target: str, scope: str, key: str, value: str,
@@ -193,6 +277,19 @@ class SQLiteMemoryStore:
             project_id = self._get_project_id(project_path)
         elif scope != "global":
             raise ValueError("Scope must be 'global' or 'project' with project_path")
+
+        limit = self._char_limit(target)
+        current_count = self.char_count(target, scope, project_path)
+
+        if current_count + len(value) > limit:
+            if self._consolidator:
+                self._consolidator(target)
+                current_count = self.char_count(target, scope, project_path)
+            
+            if current_count + len(value) > limit:
+                raise ValueError(f"Memory full for target '{target}'. "
+                                 f"Limit: {limit}, current: {current_count}, "
+                                 f"needed: {len(value)}")
 
         now = time.time()
         self.conn.execute(
@@ -378,6 +475,12 @@ class SQLiteMemoryStore:
         if project_path:
             project_id = self._get_project_id(project_path)
 
+        limit = self._char_limit("failure")
+        current_count = self.char_count("failure", scope="project" if project_path else "global", project_path=project_path)
+
+        if current_count + len(content) > limit:
+            raise ValueError(f"Failure memory full. Limit: {limit}, current: {current_count}, needed: {len(content)}")
+
         now = time.time()
         cursor = self.conn.execute(
             """INSERT INTO memories (project, target, category, content,
@@ -392,6 +495,7 @@ class SQLiteMemoryStore:
             project=project_id,
             target="failure",
             category=category,
+            key=None,
             content=content,
             failure_reason=failure_reason,
             tool_state=tool_state,

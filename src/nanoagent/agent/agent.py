@@ -49,7 +49,23 @@ class Agent:
         self.memory = SQLiteMemoryStore(db_path=db_path)
         self.project_path = project_path
         self.llm_provider = llm_provider
-        self.skill_storage = SkillStorage(db_path=db_path)
+        self.skill_storage = SkillStorage(db_path=db_path, store=self.memory)
+        
+        from nanoagent.config import AgentConfig
+        config = AgentConfig()
+        self.review_enabled = config.review_enabled
+        self.flush_min_turns = config.flush_min_turns
+        self.nudge_interval = config.nudge_interval
+        self.nudge_tool_calls = config.nudge_tool_calls
+        
+        self.background_review = None
+        if self.review_enabled:
+            from nanoagent.memory.background_review import BackgroundReview
+            self.background_review = BackgroundReview(
+                self, 
+                nudge_interval=self.nudge_interval, 
+                nudge_tool_calls=self.nudge_tool_calls
+            )
 
     @property
     def tools(self) -> dict[str, Any]:
@@ -96,6 +112,48 @@ class Agent:
         return self.memory.get(target=target, scope=scope, key=key,
                                project_path=self.project_path if scope == "project" else None)
 
+    def build_system_prompt(self, base_prompt: str | None = None, inject_memory: bool = True, inject_failures: bool = True) -> str:
+        """Construct the rich system prompt injecting memory context and policy."""
+        from nanoagent.memory.constants import MEMORY_POLICY_PROMPT
+        
+        parts = []
+        if base_prompt:
+            parts.append(base_prompt)
+            
+        parts.append(MEMORY_POLICY_PROMPT)
+        
+        if inject_memory:
+            # 1. User profile memories
+            user_context = self.memory.format_for_system_prompt("user")
+            if user_context:
+                parts.append(f"<user-profile>\n{user_context}\n</user-profile>")
+                
+            # 2. General/Global memories
+            global_memories = self.memory.format_for_system_prompt("memory")
+            
+            # 3. Project memories
+            project_memories = ""
+            if self.project_path:
+                project_memories = self.memory.format_project_block("memory", self.project_path)
+                
+            if global_memories or project_memories:
+                memory_block = []
+                if global_memories:
+                    memory_block.append(f"Global Memories:\n{global_memories}")
+                if project_memories:
+                    memory_block.append(f"Project Memories:\n{project_memories}")
+                parts.append("<memory>\n" + "\n\n".join(memory_block) + "\n</memory>")
+                
+        if inject_failures:
+            failures = self.memory.search_failures(project_path=self.project_path, limit=5)
+            if failures:
+                failures_str = []
+                for f in failures:
+                    failures_str.append(f"[{f.category or 'failure'}] {f.content}")
+                parts.append("<recent-failures>\n" + "\n".join(failures_str) + "\n</recent-failures>")
+                
+        return "\n\n".join(parts)
+
     def run(self, prompt: str, system_prompt: str | None = None, max_iterations: int = 10,
             messages: list[dict] | None = None) -> tuple[str, list[dict]]:
         if not self.llm_provider:
@@ -106,13 +164,20 @@ class Agent:
         else:
             messages.append({"role": "user", "content": prompt})
 
-        tools = self._tools.openai_schemas()
+        provider_name = "openai"
+        if self.llm_provider:
+            provider_class = self.llm_provider.__class__.__name__.lower()
+            if "anthropic" in provider_class:
+                provider_name = "anthropic"
+
+        tools = self.tool_schemas(provider_name)
+        injected_sys = self.build_system_prompt(system_prompt)
 
         for _ in range(max_iterations):
             response = self.llm_provider.chat(
                 messages=messages,
                 tools=tools if tools else None,
-                system_prompt=system_prompt,
+                system_prompt=injected_sys,
             )
 
             if response.tool_calls:
@@ -122,6 +187,17 @@ class Agent:
                     messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
             else:
                 messages.append({"role": "assistant", "content": response.content or ""})
+                
+                # Background review trigger
+                tc_count = sum(len(msg.get("tool_calls") or []) for msg in messages if msg.get("role") == "assistant" and msg.get("tool_calls"))
+                if self.background_review:
+                    self.background_review.on_turn_end(turn_count=1, tool_calls=tc_count, messages=messages)
+                    
                 return response.content or "", messages
         messages.append({"role": "assistant", "content": "Max iterations reached."})
+        
+        tc_count = sum(len(msg.get("tool_calls") or []) for msg in messages if msg.get("role") == "assistant" and msg.get("tool_calls"))
+        if self.background_review:
+            self.background_review.on_turn_end(turn_count=1, tool_calls=tc_count, messages=messages)
+            
         return "Max iterations reached.", messages

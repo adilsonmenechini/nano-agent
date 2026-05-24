@@ -110,6 +110,44 @@ def _load_skills(project_path: str | None) -> list[dict]:
     return loaded
 
 
+def _run_consolidation(agent: Agent, target: str) -> None:
+    store = agent.memory
+    store.consolidate_dedup(target=target)
+    
+    llm_provider = agent.llm_provider
+    if llm_provider is not None:
+        entries = store.conn.execute(
+            "SELECT content, key FROM memories WHERE target = ? ORDER BY created",
+            (target,),
+        ).fetchall()
+        if len(entries) < 3:
+            return
+
+        contents = "\n\n".join(
+            f"--- Entry #{i} (key: {e['key'] or '(none)'}) ---\n{e['content']}"
+            for i, e in enumerate(entries, 1)
+        )
+        from .memory.constants import CONSOLIDATION_PROMPT
+        cprompt = f"{CONSOLIDATION_PROMPT}\n\nTarget category: {target}\n\nEntries to consolidate:\n\n{contents}"
+        try:
+            response_text = llm_provider.generate(
+                prompt=cprompt,
+                system_prompt="You are a memory consolidation system. Output only the consolidated text."
+            )
+            parts = [p.strip() for p in response_text.split("§") if p.strip()]
+            if parts:
+                store.conn.execute("DELETE FROM memories WHERE target = ?", (target,))
+                for idx, part in enumerate(parts):
+                    store.add(
+                        target=target,
+                        scope="project" if agent.project_path else "global",
+                        key=f"consolidated-{target}-{idx+1}",
+                        value=part,
+                        project_path=agent.project_path
+                    )
+        except Exception:
+            pass
+
 def _make_agent(provider_name: str | None, project_path: str | None) -> Agent:
     config = AgentConfig()
     project_path = project_path or config.project_path
@@ -121,6 +159,9 @@ def _make_agent(provider_name: str | None, project_path: str | None) -> Agent:
         db_path = str(db_dir / "memory.db")
     llm = _resolve_provider(provider_name)
     agent = Agent(project_path=project_path, llm_provider=llm, db_path=db_path)
+    
+    # Register automatic consolidator callback
+    agent.memory.set_consolidator(lambda target: _run_consolidation(agent, target))
 
     for t in _load_mcp_tools(project_path):
         agent._tools.register(t)
@@ -197,11 +238,24 @@ def chat(provider, project_path):
             prompt = console.input("[bold blue]>>> [/bold blue]")
         except (EOFError, KeyboardInterrupt):
             console.print()
+            # Trigger session flush on interruption
+            from .memory.session_flush import SessionFlush
+            flusher = SessionFlush(flush_min_turns=agent.flush_min_turns)
+            repl_turns = len([m for m in messages if m.get("role") == "user"])
+            if flusher.should_flush(repl_turns):
+                console.print("[dim italic green]Flushing session memory...[/dim italic green]")
+                flusher.flush(messages, agent)
             break
 
         raw = prompt.strip()
 
         if raw in ("exit", "quit", "/exit", "/quit"):
+            from .memory.session_flush import SessionFlush
+            flusher = SessionFlush(flush_min_turns=agent.flush_min_turns)
+            repl_turns = len([m for m in messages if m.get("role") == "user"])
+            if flusher.should_flush(repl_turns):
+                console.print("[dim italic green]Flushing session memory...[/dim italic green]")
+                flusher.flush(messages, agent)
             break
 
         if not raw:
@@ -371,26 +425,32 @@ def chat(provider, project_path):
                         f"--- Entry #{i} (key: {e['key'] or '(none)'}) ---\n{e['content']}"
                         for i, e in enumerate(entries, 1)
                     )
-                    cprompt = (
-                        "You are consolidating agent memory. Review these entries about a single topic "
-                        "and write ONE consolidated entry that preserves all unique facts. "
-                        "Remove redundant information. Keep important details and timestamps.\n\n"
-                        f"Target category: {target}\n\n"
-                        f"Entries to consolidate ({len(entries)} total):\n\n{contents}\n\n"
-                        "Output ONLY the consolidated text, no commentary."
-                    )
+                    from .memory.constants import CONSOLIDATION_PROMPT
+                    cprompt = f"{CONSOLIDATION_PROMPT}\n\nTarget category: {target}\n\nEntries to consolidate:\n\n{contents}"
                     try:
                         response_text = llm_provider.generate(prompt=cprompt, system_prompt="You are a memory consolidation system. Output only the consolidated text.")
-                        store.conn.execute("DELETE FROM memories WHERE target = ?", (target,))
-                        store.add(target=target, scope="project" if agent.project_path else "global",
-                                  key=f"consolidated-{target}", value=response_text,
-                                  project_path=agent.project_path)
-                        console.print(f"[green]Consolidated {target}: {len(entries)} entries → 1[/green]")
+                        parts = [p.strip() for p in response_text.split("§") if p.strip()]
+                        if parts:
+                            store.conn.execute("DELETE FROM memories WHERE target = ?", (target,))
+                            for idx, part in enumerate(parts):
+                                store.add(target=target, scope="project" if agent.project_path else "global",
+                                          key=f"consolidated-{target}-{idx+1}", value=part,
+                                          project_path=agent.project_path)
+                            console.print(f"[green]Consolidated {target}: {len(entries)} entries → {len(parts)}[/green]")
+                        else:
+                            console.print(f"[yellow]Consolidation returned empty result for {target}[/yellow]")
                     except Exception as e:
                         console.print(f"[yellow]Consolidation failed for {target}: {e}[/yellow]")
                 store.conn.commit()
             else:
                 console.print("[dim]No LLM provider — exact dedup only. Set a provider for semantic consolidation.[/dim]")
+            continue
+
+        if raw in ("/memory-preview-context", "memory-preview-context"):
+            injected_sys = agent.build_system_prompt(system_prompt)
+            console.print("[bold cyan]--- Injected System Prompt Preview ---[/bold cyan]")
+            console.print(injected_sys)
+            console.print("[bold cyan]----------------------------------------[/bold cyan]")
             continue
 
         if raw.startswith("!"):
@@ -409,6 +469,19 @@ def chat(provider, project_path):
                 except Exception as e:
                     console.print(f"[red]Error: {e}[/red]")
             continue
+
+        # Detect user correction feedback
+        from .memory.correction_detector import is_correction
+        if is_correction(raw):
+            try:
+                agent.memory.add_failure(
+                    content=raw,
+                    category="correction",
+                    project_path=agent.project_path
+                )
+                console.print("[dim italic green]Saved correction feedback to failure memories.[/dim italic green]")
+            except Exception as e:
+                console.print(f"[dim yellow]Could not auto-save correction feedback: {e}[/dim yellow]")
 
         try:
             response, messages = agent.run(

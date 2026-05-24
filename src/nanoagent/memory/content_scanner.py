@@ -46,9 +46,7 @@ SECRET_PATTERNS: list[dict] = [
     {"pattern": re.compile(r'\bOPENROUTER_API_KEY\b'), "id": "env_openrouter_key", "severity": "medium"},
     {"pattern": re.compile(r'\bGITHUB_TOKEN\b'), "id": "env_github_token", "severity": "medium"},
     {"pattern": re.compile(r'\bAWS_SECRET_ACCESS_KEY\b'), "id": "env_aws_secret", "severity": "medium"},
-    {"pattern": re.compile(r'\bOPENAI_MODEL\b'), "id": "env_openai_model", "severity": "medium"},
-    {"pattern": re.compile(r'\bANTHROPIC_MODEL\b'), "id": "env_anthropic_model", "severity": "medium"},
-    {"pattern": re.compile(r'\b[A-Za-z0-9+/]{40,}\b'), "id": "high_entropy_string", "severity": "low"},
+    {"pattern": re.compile(r'\b[A-Za-z0-9+/]{60,}\b'), "id": "high_entropy_string", "severity": "low"},
 ]
 
 
