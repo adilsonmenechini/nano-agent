@@ -31,7 +31,7 @@
 
 ## Overview
 
-NanoAgent is a lightweight, extensible agent framework designed for building AI agents with persistent memory, modular tool systems, and skill-based capabilities. Inspired by projects like pi-hermes-memory, NanoAgent provides a solid foundation for creating agents that can learn, remember, and interact with various LLM providers.
+NanoAgent is a lightweight, extensible agent framework designed for building AI agents with persistent memory, modular tool systems, and skill-based capabilities. Inspired by projects like hermes-agent, NanoAgent provides a solid foundation for creating agents that can learn, remember, and interact with various LLM providers.
 
 ### What's inside
 
@@ -355,7 +355,7 @@ pyright .
 - [ ] Implement automatic skill creation from observed patterns
 - [ ] Add more built-in tools (file operations, web search, code execution)
 - [ ] Enhance memory system with vector embeddings for semantic search
-- [ ] Add background learning and auto-consolidation (like pi-hermes-memory)
+- [ ] Add background learning and auto-consolidation (like hermes-agent)
 - [ ] Add secret scanning for memory entries to prevent credential leakage
 - [ ] Extend CLI with more commands (memory management, skill management)
 - [ ] Implement streaming responses for better user experience
@@ -373,5 +373,5 @@ NanoAgent is licensed under the MIT License - see the [LICENSE](LICENSE) file fo
 
 ## Acknowledgments
 
-- Inspired by [pi-hermes-memory](https://github.com/chandra447/pi-hermes-memory) for the memory system design
+- Inspired by [hermes-agent](https://https://github.com/nousresearch/hermes-agent) for the memory system design
 - Built with ❤️ using Python and the open-source AI community
