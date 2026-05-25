@@ -159,20 +159,14 @@ class SQLiteMemoryStore:
     def _get_project_id(self, project_path: str) -> str:
         return hashlib.sha256(project_path.encode()).hexdigest()[:16]
 
+    def _project_filter(self, scope: str = "global", project_path: str | None = None) -> tuple[str, list]:
+        """Return (where_clause, params) for scoped queries."""
+        if scope == "project" and project_path:
+            return "project = ?", [self._get_project_id(project_path)]
+        return "project IS NULL", []
+
     def _map_row(self, row: sqlite3.Row) -> SqliteMemoryEntry:
-        return SqliteMemoryEntry(
-            id=row["id"],
-            project=row["project"],
-            target=row["target"],
-            category=row["category"],
-            key=row["key"],
-            content=row["content"],
-            failure_reason=row["failure_reason"],
-            tool_state=row["tool_state"],
-            corrected_to=row["corrected_to"],
-            created=row["created"],
-            last_referenced=row["last_referenced"],
-        )
+        return SqliteMemoryEntry(**{k: row[k] for k in row.keys()})
 
     def _char_limit(self, target: str) -> int:
         from .constants import DEFAULT_MEMORY_CHAR_LIMIT, DEFAULT_USER_CHAR_LIMIT, DEFAULT_FAILURE_CHAR_LIMIT
@@ -201,58 +195,30 @@ class SQLiteMemoryStore:
         row = cursor.fetchone()
         return row[0] if row and row[0] is not None else 0
 
+    def _format_entries(self, target: str, where: str, params: list, char_limit: int) -> str:
+        """Select and join memory entries respecting char_limit."""
+        from .constants import ENTRY_DELIMITER
+        cursor = self.conn.execute(
+            f"SELECT content FROM memories WHERE target = ? AND {where} ORDER BY last_referenced DESC",
+            [target] + params,
+        )
+        result, length = [], 0
+        for entry in (row["content"] for row in cursor.fetchall()):
+            needed = len(entry) + (len(ENTRY_DELIMITER) if result else 0)
+            if length + needed > char_limit:
+                break
+            result.append(entry)
+            length += needed
+        return ENTRY_DELIMITER.join(result)
+
     def format_for_system_prompt(self, target: str, char_limit: int = 5000) -> str:
         """Format global entries of a target with ENTRY_DELIMITER, respecting char_limit."""
-        cursor = self.conn.execute(
-            "SELECT content FROM memories WHERE target = ? AND project IS NULL ORDER BY last_referenced DESC",
-            (target,)
-        )
-        entries = [row["content"] for row in cursor.fetchall()]
-        
-        selected_entries = []
-        current_len = 0
-        from .constants import ENTRY_DELIMITER
-        
-        for entry in entries:
-            entry_len = len(entry)
-            needed = entry_len
-            if selected_entries:
-                needed += len(ENTRY_DELIMITER)
-            
-            if current_len + needed <= char_limit:
-                selected_entries.append(entry)
-                current_len += needed
-            else:
-                break
-                
-        return ENTRY_DELIMITER.join(selected_entries)
+        return self._format_entries(target, "project IS NULL", [], char_limit)
 
     def format_project_block(self, target: str, project_path: str, char_limit: int = 5000) -> str:
-        """Format project-scoped entries of a target for the given project path with ENTRY_DELIMITER, respecting char_limit."""
-        project_id = self._get_project_id(project_path)
-        cursor = self.conn.execute(
-            "SELECT content FROM memories WHERE target = ? AND project = ? ORDER BY last_referenced DESC",
-            (target, project_id)
-        )
-        entries = [row["content"] for row in cursor.fetchall()]
-        
-        selected_entries = []
-        current_len = 0
-        from .constants import ENTRY_DELIMITER
-        
-        for entry in entries:
-            entry_len = len(entry)
-            needed = entry_len
-            if selected_entries:
-                needed += len(ENTRY_DELIMITER)
-            
-            if current_len + needed <= char_limit:
-                selected_entries.append(entry)
-                current_len += needed
-            else:
-                break
-                
-        return ENTRY_DELIMITER.join(selected_entries)
+        """Format project-scoped entries for the given project path, respecting char_limit."""
+        pid = self._get_project_id(project_path)
+        return self._format_entries(target, "project = ?", [pid], char_limit)
 
     # ─── Backward-compatible API ───
 
@@ -272,24 +238,22 @@ class SQLiteMemoryStore:
         if result.blocked:
             raise ValueError(f"Content blocked: {result.reason}")
 
-        project_id: str | None = None
         if scope == "project" and project_path:
-            project_id = self._get_project_id(project_path)
-        elif scope != "global":
+            project_id: str | None = self._get_project_id(project_path)
+        elif scope == "global":
+            project_id = None
+        else:
             raise ValueError("Scope must be 'global' or 'project' with project_path")
 
         limit = self._char_limit(target)
         current_count = self.char_count(target, scope, project_path)
-
         if current_count + len(value) > limit:
             if self._consolidator:
                 self._consolidator(target)
                 current_count = self.char_count(target, scope, project_path)
-            
             if current_count + len(value) > limit:
                 raise ValueError(f"Memory full for target '{target}'. "
-                                 f"Limit: {limit}, current: {current_count}, "
-                                 f"needed: {len(value)}")
+                                 f"Limit: {limit}, current: {current_count}, needed: {len(value)}")
 
         now = time.time()
         self.conn.execute(
@@ -302,34 +266,16 @@ class SQLiteMemoryStore:
 
     def get(self, target: str, scope: str, key: str,
             project_path: str | None = None) -> str | None:
-        """Retrieve memory by exact key match (backward-compatible).
-
-        In Hermes, memories are §-delimited and key-based lookup maps
-        to content search. We use FTS5 as the primary lookup, with key
-        stored as a content prefix for backward compatibility.
-        """
-        project_id: str | None = None
-        if scope == "project" and project_path:
-            project_id = self._get_project_id(project_path)
-
-        if project_id is not None:
-            cursor = self.conn.execute(
-                """SELECT id, content FROM memories
-                   WHERE target = ? AND project = ? AND key = ?
-                   ORDER BY last_referenced DESC LIMIT 1""",
-                (target, project_id, key),
-            )
-        else:
-            cursor = self.conn.execute(
-                """SELECT id, content FROM memories
-                   WHERE target = ? AND project IS NULL AND key = ?
-                   ORDER BY last_referenced DESC LIMIT 1""",
-                (target, key),
-            )
+        """Retrieve memory by exact key match (backward-compatible)."""
+        where, params = self._project_filter(scope, project_path)
+        cursor = self.conn.execute(
+            f"SELECT id, content FROM memories WHERE target = ? AND {where} AND key = ?"
+            " ORDER BY last_referenced DESC LIMIT 1",
+            [target] + params + [key],
+        )
         row = cursor.fetchone()
         if row is None:
             return None
-        # Update last_referenced
         self.conn.execute(
             "UPDATE memories SET last_referenced = ? WHERE id = ?",
             (time.time(), row["id"]),
@@ -357,20 +303,11 @@ class SQLiteMemoryStore:
     def remove(self, target: str, scope: str, key: str,
                project_path: str | None = None):
         """Remove memory by exact key match."""
-        project_id: str | None = None
-        if scope == "project" and project_path:
-            project_id = self._get_project_id(project_path)
-
-        if project_id is not None:
-            self.conn.execute(
-                "DELETE FROM memories WHERE target = ? AND project = ? AND key = ?",
-                (target, project_id, key),
-            )
-        else:
-            self.conn.execute(
-                "DELETE FROM memories WHERE target = ? AND project IS NULL AND key = ?",
-                (target, key),
-            )
+        where, params = self._project_filter(scope, project_path)
+        self.conn.execute(
+            f"DELETE FROM memories WHERE target = ? AND {where} AND key = ?",
+            [target] + params + [key],
+        )
         self.conn.commit()
 
     def replace(self, target: str, scope: str, old_text: str, new_text: str,
@@ -379,26 +316,14 @@ class SQLiteMemoryStore:
         result = scan_content(new_text)
         if result.blocked:
             raise ValueError(f"Content blocked: {result.reason}")
-
-        project_id: str | None = None
-        if scope == "project" and project_path:
-            project_id = self._get_project_id(project_path)
-
+        where, params = self._project_filter(scope, project_path)
         now = time.time()
-        if project_id is not None:
-            self.conn.execute(
-                """UPDATE memories SET content = REPLACE(content, ?, ?),
-                   created = ?, last_referenced = ?
-                   WHERE target = ? AND project = ? AND content LIKE ?""",
-                (old_text, new_text, now, now, target, project_id, f"%{old_text}%"),
-            )
-        else:
-            self.conn.execute(
-                """UPDATE memories SET content = REPLACE(content, ?, ?),
-                   created = ?, last_referenced = ?
-                   WHERE target = ? AND project IS NULL AND content LIKE ?""",
-                (old_text, new_text, now, now, target, f"%{old_text}%"),
-            )
+        self.conn.execute(
+            f"""UPDATE memories SET content = REPLACE(content, ?, ?),
+               created = ?, last_referenced = ?
+               WHERE target = ? AND {where} AND content LIKE ?""",
+            [old_text, new_text, now, now, target] + params + [f"%{old_text}%"],
+        )
         self.conn.commit()
 
     def delete_all(self, target: str | None = None) -> int:
@@ -571,20 +496,12 @@ class SQLiteMemoryStore:
     def get_skill(self, slug: str, scope: str = "global",
                   project_path: str | None = None) -> SqliteSkillEntry | None:
         """Get a skill by slug."""
-        project_id: str | None = None
-        if scope == "project" and project_path:
-            project_id = self._get_project_id(project_path)
-
-        if project_id is not None:
-            cursor = self.conn.execute(
-                "SELECT * FROM skills WHERE slug = ? AND scope = ? AND project_id = ?",
-                (slug, scope, project_id),
-            )
-        else:
-            cursor = self.conn.execute(
-                "SELECT * FROM skills WHERE slug = ? AND scope = ? AND project_id IS NULL",
-                (slug, scope),
-            )
+        where, params = self._project_filter(scope, project_path)
+        where = where.replace("project", "project_id")
+        cursor = self.conn.execute(
+            f"SELECT * FROM skills WHERE slug = ? AND scope = ? AND {where}",
+            [slug, scope] + params,
+        )
         row = cursor.fetchone()
         if row is None:
             return None
@@ -597,20 +514,12 @@ class SQLiteMemoryStore:
     def list_skills(self, scope: str = "global",
                     project_path: str | None = None) -> list[SqliteSkillEntry]:
         """List all skills."""
-        project_id: str | None = None
-        if scope == "project" and project_path:
-            project_id = self._get_project_id(project_path)
-
-        if project_id is not None:
-            cursor = self.conn.execute(
-                "SELECT * FROM skills WHERE scope = ? AND project_id = ? ORDER BY slug",
-                (scope, project_id),
-            )
-        else:
-            cursor = self.conn.execute(
-                "SELECT * FROM skills WHERE scope = ? AND project_id IS NULL ORDER BY slug",
-                (scope,),
-            )
+        where, params = self._project_filter(scope, project_path)
+        where = where.replace("project", "project_id")
+        cursor = self.conn.execute(
+            f"SELECT * FROM skills WHERE scope = ? AND {where} ORDER BY slug",
+            [scope] + params,
+        )
         return [
             SqliteSkillEntry(
                 id=row["id"], slug=row["slug"], name=row["name"],
@@ -623,19 +532,11 @@ class SQLiteMemoryStore:
     def delete_skill(self, slug: str, scope: str = "global",
                      project_path: str | None = None) -> bool:
         """Delete a skill."""
-        project_id: str | None = None
-        if scope == "project" and project_path:
-            project_id = self._get_project_id(project_path)
-
-        if project_id is not None:
-            cursor = self.conn.execute(
-                "DELETE FROM skills WHERE slug = ? AND scope = ? AND project_id = ?",
-                (slug, scope, project_id),
-            )
-        else:
-            cursor = self.conn.execute(
-                "DELETE FROM skills WHERE slug = ? AND scope = ? AND project_id IS NULL",
-                (slug, scope),
-            )
+        where, params = self._project_filter(scope, project_path)
+        where = where.replace("project", "project_id")
+        cursor = self.conn.execute(
+            f"DELETE FROM skills WHERE slug = ? AND scope = ? AND {where}",
+            [slug, scope] + params,
+        )
         self.conn.commit()
         return cursor.rowcount > 0

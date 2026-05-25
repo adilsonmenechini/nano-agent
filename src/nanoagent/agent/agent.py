@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from typing import Any
 
 from nanoagent.tool import Tool, py_to_json_schema
@@ -50,20 +51,32 @@ class Agent:
         self.project_path = project_path
         self.llm_provider = llm_provider
         self.skill_storage = SkillStorage(db_path=db_path, store=self.memory)
-        
+
+        # ── Callbacks ──────────────────────────────────────────────────────
+        # on_thinking()              → called before each LLM request
+        # on_tool_call(name, args)   → called before a tool is executed
+        # on_tool_result(name, res)  → called after a tool returns
+        # on_skill_call(name, args)  → called before a skill is executed
+        # on_skill_result(name, res) → called after a skill returns
+        self.on_thinking: Any = None
+        self.on_tool_call: Any = None
+        self.on_tool_result: Any = None
+        self.on_skill_call: Any = None
+        self.on_skill_result: Any = None
+
         from nanoagent.config import AgentConfig
         config = AgentConfig()
         self.review_enabled = config.review_enabled
         self.flush_min_turns = config.flush_min_turns
         self.nudge_interval = config.nudge_interval
         self.nudge_tool_calls = config.nudge_tool_calls
-        
+
         self.background_review = None
         if self.review_enabled:
             from nanoagent.memory.background_review import BackgroundReview
             self.background_review = BackgroundReview(
-                self, 
-                nudge_interval=self.nudge_interval, 
+                self,
+                nudge_interval=self.nudge_interval,
                 nudge_tool_calls=self.nudge_tool_calls
             )
 
@@ -102,7 +115,13 @@ class Agent:
         skill = self._skills.get(name)
         if not skill:
             raise ValueError(f"Skill '{name}' not found")
-        return skill.execute(**kwargs) if hasattr(skill, "execute") else skill(**kwargs)
+        if self.on_skill_call:
+            self.on_skill_call(name, kwargs)
+        res = skill.execute(**kwargs) if hasattr(skill, "execute") else skill(**kwargs)
+        if self.on_skill_result:
+            self.on_skill_result(name, res)
+        return res
+
 
     def remember(self, key: str, value: str, target: str = "memory", scope: str = "global", category: str | None = None):
         self.memory.add(target=target, scope=scope, key=key, value=value, category=category,
@@ -174,6 +193,8 @@ class Agent:
         injected_sys = self.build_system_prompt(system_prompt)
 
         for _ in range(max_iterations):
+            if self.on_thinking:
+                self.on_thinking()
             response = self.llm_provider.chat(
                 messages=messages,
                 tools=tools if tools else None,
@@ -182,17 +203,20 @@ class Agent:
 
             if response.tool_calls:
                 for tc in response.tool_calls:
+                    if self.on_tool_call:
+                        self.on_tool_call(tc.name, tc.arguments)
                     result = self.execute_tool(tc.name, tc.arguments)
-                    messages.append({"role": "assistant", "content": None, "tool_calls": [{"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": str(tc.arguments)}}]})
+                    if self.on_tool_result:
+                        self.on_tool_result(tc.name, result)
+                    messages.append({"role": "assistant", "content": "", "tool_calls": [{"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}]})
                     messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
             else:
                 messages.append({"role": "assistant", "content": response.content or ""})
-                
-                # Background review trigger
+
                 tc_count = sum(len(msg.get("tool_calls") or []) for msg in messages if msg.get("role") == "assistant" and msg.get("tool_calls"))
                 if self.background_review:
                     self.background_review.on_turn_end(turn_count=1, tool_calls=tc_count, messages=messages)
-                    
+
                 return response.content or "", messages
         messages.append({"role": "assistant", "content": "Max iterations reached."})
         

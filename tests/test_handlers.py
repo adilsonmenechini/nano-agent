@@ -103,3 +103,14 @@ def test_background_review_and_session_flush():
 
     agent.memory.close()
     agent2.memory.close()
+
+def test_make_agent_registers_local_tools():
+    from nanoagent.cli import _make_agent
+    
+    agent = _make_agent(provider_name=None, project_path=None)
+    try:
+        assert "web" in agent.tools
+        assert "todo" in agent.tools
+    finally:
+        agent.memory.close()
+
