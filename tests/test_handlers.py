@@ -1,25 +1,27 @@
 from nanoagent.memory.correction_detector import is_correction
 from nanoagent.agent.agent import Agent
 
+
 def test_correction_detector():
     # Strong positive patterns
     assert is_correction("No, that is not correct.") is True
     assert is_correction("Don't run that command again.") is True
     assert is_correction("Actually, let's use python3.") is True
     assert is_correction("I told you to use the absolute path.") is True
-    
+
     # Weak positive with directive word
     assert is_correction("No, try using pip3.") is True
-    
+
     # Negatives
     assert is_correction("No problem, thank you!") is False
     assert is_correction("No thanks.") is False
     assert is_correction("That is not bad.") is False
     assert is_correction("Just a regular chat message.") is False
 
+
 def test_build_system_prompt():
     agent = Agent(db_path=":memory:")
-    
+
     # 1. Base prompt alone
     prompt = agent.build_system_prompt("Base system prompt context")
     assert "Base system prompt context" in prompt
@@ -31,7 +33,7 @@ def test_build_system_prompt():
     # 2. Add user profile and global memory
     agent.remember(key="pref", value="User prefers dark mode", target="user")
     agent.remember(key="db_dec", value="Agreed to use sqlite db")
-    
+
     prompt = agent.build_system_prompt("Base system prompt context")
     assert "<user-profile>" in prompt
     assert "User prefers dark mode" in prompt
@@ -41,15 +43,15 @@ def test_build_system_prompt():
 
     # 3. Add failures
     agent.memory.add_failure(
-        content="Command python failed with 127",
-        category="tool-quirk"
+        content="Command python failed with 127", category="tool-quirk"
     )
-    
+
     prompt = agent.build_system_prompt("Base")
     assert "<recent-failures>" in prompt
     assert "[tool-quirk] Command python failed with 127" in prompt
 
     agent.memory.close()
+
 
 def test_background_review_and_session_flush():
     from nanoagent.memory.background_review import BackgroundReview
@@ -57,17 +59,17 @@ def test_background_review_and_session_flush():
     import unittest.mock
 
     agent = Agent(db_path=":memory:")
-    
+
     # Mock LLM provider
     mock_llm = unittest.mock.MagicMock()
     mock_llm.generate.return_value = "CATEGORY: user\nCONTENT: User prefers python3\n\nCATEGORY: failure\nCONTENT: calling python is wrong, use python3"
     agent.llm_provider = mock_llm
 
     review = BackgroundReview(agent, nudge_interval=2, nudge_tool_calls=3)
-    
+
     messages = [
         {"role": "user", "content": "I prefer python3"},
-        {"role": "assistant", "content": "Sure", "tool_calls": []}
+        {"role": "assistant", "content": "Sure", "tool_calls": []},
     ]
 
     # First turn - shouldn't trigger yet
@@ -76,7 +78,7 @@ def test_background_review_and_session_flush():
 
     # Second turn - triggers!
     review.on_turn_end(turn_count=1, tool_calls=1, messages=messages)
-    
+
     user_mems = agent.memory.search("python3", target="user")
     assert len(user_mems) > 0
     assert "User prefers python3" in user_mems[0].content
@@ -89,7 +91,9 @@ def test_background_review_and_session_flush():
     # Test SessionFlush
     agent2 = Agent(db_path=":memory:")
     mock_llm2 = unittest.mock.MagicMock()
-    mock_llm2.generate.return_value = "CATEGORY: memory\nCONTENT: NanoAgent project uses SQLite"
+    mock_llm2.generate.return_value = (
+        "CATEGORY: memory\nCONTENT: NanoAgent project uses SQLite"
+    )
     agent2.llm_provider = mock_llm2
 
     flusher = SessionFlush(flush_min_turns=2)
@@ -104,13 +108,13 @@ def test_background_review_and_session_flush():
     agent.memory.close()
     agent2.memory.close()
 
+
 def test_make_agent_registers_local_tools():
     from nanoagent.cli import _make_agent
-    
+
     agent = _make_agent(provider_name=None, project_path=None)
     try:
         assert "web" in agent.tools
         assert "todo" in agent.tools
     finally:
         agent.memory.close()
-

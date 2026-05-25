@@ -8,8 +8,9 @@ class SkillStorage:
     executable code with slug-based lookup, scope, and metadata.
     """
 
-    def __init__(self, db_path: str | None = None,
-                 store: SQLiteMemoryStore | None = None):
+    def __init__(
+        self, db_path: str | None = None, store: SQLiteMemoryStore | None = None
+    ):
         if store is not None:
             self._store_ref = store
         else:
@@ -19,14 +20,23 @@ class SkillStorage:
     def _store(self) -> SQLiteMemoryStore:
         return self._store_ref
 
-    def add_skill(self, slug: str, name: str, description: str, code: str,
-                  scope: str = "global", project_path: str | None = None) -> int:
-        entry = self._store.add_skill(slug, name, description, code,
-                                       scope=scope, project_path=project_path)
+    def add_skill(
+        self,
+        slug: str,
+        name: str,
+        description: str,
+        code: str,
+        scope: str = "global",
+        project_path: str | None = None,
+    ) -> int:
+        entry = self._store.add_skill(
+            slug, name, description, code, scope=scope, project_path=project_path
+        )
         return entry.id
 
-    def get_skill(self, slug: str, scope: str = "global",
-                  project_path: str | None = None) -> dict | None:
+    def get_skill(
+        self, slug: str, scope: str = "global", project_path: str | None = None
+    ) -> dict | None:
         entry = self._store.get_skill(slug, scope=scope, project_path=project_path)
         if entry is None:
             return None
@@ -40,8 +50,9 @@ class SkillStorage:
             "updated_at": entry.updated,
         }
 
-    def list_skills(self, scope: str = "global",
-                    project_path: str | None = None) -> list[dict]:
+    def list_skills(
+        self, scope: str = "global", project_path: str | None = None
+    ) -> list[dict]:
         entries = self._store.list_skills(scope=scope, project_path=project_path)
         return [
             {
@@ -56,10 +67,14 @@ class SkillStorage:
             for e in entries
         ]
 
-    def update_skill(self, slug: str, description: str | None = None,
-                     code: str | None = None,
-                     scope: str = "global",
-                     project_path: str | None = None) -> bool:
+    def update_skill(
+        self,
+        slug: str,
+        description: str | None = None,
+        code: str | None = None,
+        scope: str = "global",
+        project_path: str | None = None,
+    ) -> bool:
         entry = self._store.get_skill(slug, scope=scope, project_path=project_path)
         if entry is None:
             return False
@@ -67,12 +82,14 @@ class SkillStorage:
         name = entry.name
         desc = description if description is not None else entry.description
         new_code = code if code is not None else entry.code
-        self._store.add_skill(slug, name, desc, new_code,
-                               scope=scope, project_path=project_path)
+        self._store.add_skill(
+            slug, name, desc, new_code, scope=scope, project_path=project_path
+        )
         return True
 
-    def delete_skill(self, slug: str, scope: str = "global",
-                     project_path: str | None = None) -> bool:
+    def delete_skill(
+        self, slug: str, scope: str = "global", project_path: str | None = None
+    ) -> bool:
         return self._store.delete_skill(slug, scope=scope, project_path=project_path)
 
     def _get_project_id(self, project_path: str) -> str:

@@ -28,7 +28,9 @@ class MCPServerConfig:
     env: dict[str, str] | None = None
 
 
-def _make_mcp_tool(name: str, desc: str, input_schema: dict, server: MCPServerConfig) -> Tool:
+def _make_mcp_tool(
+    name: str, desc: str, input_schema: dict, server: MCPServerConfig
+) -> Tool:
     t = Tool.__new__(Tool)
     t.name = name
     t.description = desc
@@ -42,7 +44,9 @@ def _call_mcp_sync(name: str, arguments: dict, server: MCPServerConfig) -> str:
 
 
 async def _call_mcp_async(name: str, arguments: dict, server: MCPServerConfig) -> str:
-    params = StdioServerParameters(command=server.command, args=list(server.args), env=server.env)
+    params = StdioServerParameters(
+        command=server.command, args=list(server.args), env=server.env
+    )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -59,16 +63,22 @@ async def _call_mcp_async(name: str, arguments: dict, server: MCPServerConfig) -
 
 
 class MCPManager:
-
     def __init__(self):
         self.servers: dict[str, MCPServerConfig] = {}
 
     def add_server(self, config: MCPServerConfig) -> None:
         self.servers[config.name] = config
 
-    def add_json(self, name: str, command: str, args: list[str] | None = None,
-                 env: dict[str, str] | None = None) -> None:
-        self.add_server(MCPServerConfig(name=name, command=command, args=args or [], env=env))
+    def add_json(
+        self,
+        name: str,
+        command: str,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+    ) -> None:
+        self.add_server(
+            MCPServerConfig(name=name, command=command, args=args or [], env=env)
+        )
 
     def load_json_config(self, path: str) -> None:
         with open(path) as f:
@@ -88,14 +98,20 @@ class MCPManager:
                     tool_name = st.name
                     if not tool_name.startswith(f"mcp_{name}_"):
                         tool_name = f"mcp_{name}_{st.name}"
-                    t = _make_mcp_tool(tool_name, st.description or "", st.inputSchema or {}, server)
+                    t = _make_mcp_tool(
+                        tool_name, st.description or "", st.inputSchema or {}, server
+                    )
                     tools.append(t)
             except Exception as e:
-                logger.error("Failed to discover tools from MCP server '%s': %s", name, e)
+                logger.error(
+                    "Failed to discover tools from MCP server '%s': %s", name, e
+                )
         return tools
 
     async def _list_tools(self, server: MCPServerConfig) -> list[Any]:
-        params = StdioServerParameters(command=server.command, args=list(server.args), env=server.env)
+        params = StdioServerParameters(
+            command=server.command, args=list(server.args), env=server.env
+        )
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()

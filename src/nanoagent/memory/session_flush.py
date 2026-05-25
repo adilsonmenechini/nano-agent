@@ -36,6 +36,8 @@ class SessionFlush:
                 prompt=prompt,
                 system_prompt="You are a memory flush assistant. Output only CATEGORY and CONTENT lines.",
             )
-            persist_entries(parse_category_content(response_text), agent, prefix="flush")
+            persist_entries(
+                parse_category_content(response_text), agent, prefix="flush"
+            )
         except Exception:
             pass

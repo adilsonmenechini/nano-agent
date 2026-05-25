@@ -16,11 +16,16 @@ class BackgroundReview:
         self.turn_count = 0
         self.tool_call_count = 0
 
-    def on_turn_end(self, turn_count: int, tool_calls: int, messages: list[dict]) -> None:
+    def on_turn_end(
+        self, turn_count: int, tool_calls: int, messages: list[dict]
+    ) -> None:
         """Accrue counts and check if review should trigger."""
         self.turn_count += turn_count
         self.tool_call_count += tool_calls
-        if self.turn_count >= self.nudge_interval or self.tool_call_count >= self.nudge_tool_calls:
+        if (
+            self.turn_count >= self.nudge_interval
+            or self.tool_call_count >= self.nudge_tool_calls
+        ):
             self._run_review(messages)
             self.turn_count = 0
             self.tool_call_count = 0
@@ -41,12 +46,16 @@ class BackgroundReview:
             elif role == "tool":
                 convo_lines.append(f"Tool Result: {content}")
 
-        prompt = f"{COMBINED_REVIEW_PROMPT}\n\nRecent Conversation:\n" + "\n".join(convo_lines)
+        prompt = f"{COMBINED_REVIEW_PROMPT}\n\nRecent Conversation:\n" + "\n".join(
+            convo_lines
+        )
         try:
             response_text = self.agent.llm_provider.generate(
                 prompt=prompt,
                 system_prompt="You are a memory extraction assistant. Output only CATEGORY and CONTENT lines as requested.",
             )
-            persist_entries(parse_category_content(response_text), self.agent, prefix="review")
+            persist_entries(
+                parse_category_content(response_text), self.agent, prefix="review"
+            )
         except Exception:
             pass

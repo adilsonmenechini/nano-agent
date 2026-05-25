@@ -3,32 +3,41 @@ from typing import List, Dict, Any
 import json
 import os
 
+
 class TodoTool(BaseTool):
     def __init__(self, storage_file: str = "todos.json"):
         super().__init__(
             name="todo",
-            description="Manages a todo list: add, list, complete tasks with priority and due date"
+            description="Manages a todo list: add, list, complete tasks with priority and due date",
         )
         self.storage_file = storage_file
         self._ensure_storage_file()
 
     def _ensure_storage_file(self):
         if not os.path.exists(self.storage_file):
-            with open(self.storage_file, 'w') as f:
+            with open(self.storage_file, "w") as f:
                 json.dump([], f)
 
     def _load_todos(self) -> List[Dict[str, Any]]:
-        with open(self.storage_file, 'r') as f:
+        with open(self.storage_file, "r") as f:
             return json.load(f)
 
     def _save_todos(self, todos: List[Dict[str, Any]]):
-        with open(self.storage_file, 'w') as f:
+        with open(self.storage_file, "w") as f:
             json.dump(todos, f, indent=2)
 
-    def execute(self, action: str, task: str = None, task_id: int = None, 
-                priority: int = None, due_date: str = None, 
-                completed: bool = None, list_all: bool = False,
-                list_completed: bool = False, list_pending: bool = False) -> Any:
+    def execute(
+        self,
+        action: str,
+        task: str = None,
+        task_id: int = None,
+        priority: int = None,
+        due_date: str = None,
+        completed: bool = None,
+        list_all: bool = False,
+        list_completed: bool = False,
+        list_pending: bool = False,
+    ) -> Any:
         """
         Perform actions on the todo list.
         Actions: add, list, complete, update, delete
@@ -51,7 +60,7 @@ class TodoTool(BaseTool):
                 "task": task,
                 "completed": False,
                 "priority": priority if priority is not None else 2,  # default medium
-                "due_date": due_date
+                "due_date": due_date,
             }
             todos.append(todo)
             self._save_todos(todos)
@@ -72,9 +81,15 @@ class TodoTool(BaseTool):
             result = []
             for todo in filtered:
                 status = "✓" if todo["completed"] else " "
-                priority_str = ["!", "!!", "!!!"][todo["priority"]-1] if 1 <= todo["priority"] <= 3 else "??"
+                priority_str = (
+                    ["!", "!!", "!!!"][todo["priority"] - 1]
+                    if 1 <= todo["priority"] <= 3
+                    else "??"
+                )
                 due_str = f" (due: {todo['due_date']})" if todo["due_date"] else ""
-                result.append(f"[{status}] {priority_str} {todo['id']}: {todo['task']}{due_str}")
+                result.append(
+                    f"[{status}] {priority_str} {todo['id']}: {todo['task']}{due_str}"
+                )
             return "\n".join(result)
         elif action == "complete":
             if task_id is None:

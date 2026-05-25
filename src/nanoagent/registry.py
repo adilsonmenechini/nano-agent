@@ -6,11 +6,16 @@ from nanoagent.tool import Tool, tool as _tool_decorator
 
 
 class ToolRegistry:
-
     def __init__(self):
         self._tools: dict[str, Tool] = {}
 
-    def register(self, t: Tool | Callable, *, name: str | None = None, description: str | None = None) -> Tool:
+    def register(
+        self,
+        t: Tool | Callable,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> Tool:
         if isinstance(t, Tool):
             self._tools[t.name] = t
             return t

@@ -17,14 +17,16 @@ DEFAULT_FAILURE_INJECTION_MAX_ENTRIES = 5
 
 # Allowed failure categories
 # Ported from pi-hermes-memory
-FAILURE_CATEGORIES = frozenset({
-    "failure",
-    "correction",
-    "insight",
-    "preference",
-    "convention",
-    "tool-quirk",
-})
+FAILURE_CATEGORIES = frozenset(
+    {
+        "failure",
+        "correction",
+        "insight",
+        "preference",
+        "convention",
+        "tool-quirk",
+    }
+)
 
 # Memory loop constants
 DEFAULT_NUDGE_INTERVAL = 10

@@ -64,7 +64,9 @@ def py_to_json_schema(tp: object) -> dict:
     if origin is dict:
         addl = {}
         if args:
-            addl["additionalProperties"] = py_to_json_schema(args[1]) if len(args) > 1 else {}
+            addl["additionalProperties"] = (
+                py_to_json_schema(args[1]) if len(args) > 1 else {}
+            )
         return {"type": "object", **addl}
 
     # Fallback
@@ -96,7 +98,9 @@ def infer_parameters_schema(fn: Callable) -> dict:
             except (TypeError, ValueError):
                 pass
         if param.default is not None and name not in required:
-            prop["default"] = param.default if param.default is not inspect.Parameter.empty else None
+            prop["default"] = (
+                param.default if param.default is not inspect.Parameter.empty else None
+            )
         if param.description:
             prop["description"] = param.description
         properties[name] = prop
@@ -114,7 +118,9 @@ class Tool:
         parameters: JSON Schema for the function parameters.
     """
 
-    def __init__(self, fn: Callable, *, name: str | None = None, description: str | None = None):
+    def __init__(
+        self, fn: Callable, *, name: str | None = None, description: str | None = None
+    ):
         self.name = name or fn.__name__
         self.description = description or (fn.__doc__ or "").strip()
         self.fn = fn
@@ -154,7 +160,12 @@ class Tool:
         }
 
 
-def tool(fn: Callable | None = None, *, name: str | None = None, description: str | None = None) -> Callable | Tool:
+def tool(
+    fn: Callable | None = None,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+) -> Callable | Tool:
     """Decorator that converts a function into a ``Tool`` with auto-generated schema.
 
     Can be used with or without arguments::
@@ -170,4 +181,5 @@ def tool(fn: Callable | None = None, *, name: str | None = None, description: st
 
     def _wrap(f: Callable) -> Tool:
         return Tool(f, name=name, description=description)
+
     return _wrap

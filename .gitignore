@@ -9,7 +9,6 @@ __pycache__/
 build/
 dist/
 .DS_Store
-.langgraph_api/
 .vulture
 .sisyphus
 */memory/*

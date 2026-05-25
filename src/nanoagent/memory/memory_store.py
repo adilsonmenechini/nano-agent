@@ -34,10 +34,13 @@ class MemoryStore:
     atomic writes, content scanning, frozen snapshot.
     """
 
-    def __init__(self, memory_dir: str | None = None,
-                 memory_char_limit: int = DEFAULT_MEMORY_CHAR_LIMIT,
-                 user_char_limit: int = DEFAULT_USER_CHAR_LIMIT,
-                 failure_char_limit: int = DEFAULT_FAILURE_CHAR_LIMIT):
+    def __init__(
+        self,
+        memory_dir: str | None = None,
+        memory_char_limit: int = DEFAULT_MEMORY_CHAR_LIMIT,
+        user_char_limit: int = DEFAULT_USER_CHAR_LIMIT,
+        failure_char_limit: int = DEFAULT_FAILURE_CHAR_LIMIT,
+    ):
         if memory_dir is None:
             memory_dir = str(Path.home() / ".nanoagent" / "memory")
         self._memory_dir = memory_dir
@@ -153,18 +156,24 @@ class MemoryStore:
                 self._load()
             current_count = self._char_count(target)
             if current_count + len(content) > limit:
-                raise ValueError(f"Memory full for target '{target}'. "
-                                 f"Limit: {limit}, current: {current_count}, "
-                                 f"needed: {len(content)}")
+                raise ValueError(
+                    f"Memory full for target '{target}'. "
+                    f"Limit: {limit}, current: {current_count}, "
+                    f"needed: {len(content)}"
+                )
 
         entries.append(content)
         self._set_entries(target, entries)
         self._save(target)
         self._freeze_snapshot()
 
-    def add_failure(self, content: str, category: str,
-                    failure_reason: str | None = None,
-                    corrected_to: str | None = None) -> None:
+    def add_failure(
+        self,
+        content: str,
+        category: str,
+        failure_reason: str | None = None,
+        corrected_to: str | None = None,
+    ) -> None:
         """Add a categorized failure entry."""
         if category not in FAILURE_CATEGORIES:
             raise ValueError(f"Invalid failure category '{category}'")

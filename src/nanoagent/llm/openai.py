@@ -9,13 +9,17 @@ from .base import BaseLLMProvider, LLMResponse, ToolCall
 
 
 class OpenAIProvider(BaseLLMProvider):
-
     def __init__(self, api_key: str, base_url: str, model: str):
         super().__init__(api_key, base_url, model)
         self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
 
-    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
-             system_prompt: str | None = None, **kwargs) -> LLMResponse:
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> LLMResponse:
         full = []
         if system_prompt:
             full.append({"role": "system", "content": system_prompt})
@@ -35,7 +39,11 @@ class OpenAIProvider(BaseLLMProvider):
         tcs = None
         if msg.tool_calls:
             tcs = [
-                ToolCall(id=tc.id, name=tc.function.name, arguments=json.loads(tc.function.arguments))
+                ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=json.loads(tc.function.arguments),
+                )
                 for tc in msg.tool_calls
             ]
         return LLMResponse(

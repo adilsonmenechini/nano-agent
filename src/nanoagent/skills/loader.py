@@ -16,7 +16,6 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\r?\n(.*?)\r?\n---\s*\r?\n?", re.DOTALL)
 
 
 class SkillsLoader:
-
     def __init__(self, sources: list[str | tuple[str, str]]):
         self._skills: dict[str, SkillMeta] = {}
         for entry in sources:
@@ -46,6 +45,7 @@ class SkillsLoader:
         if m:
             try:
                 import yaml  # noqa: F811
+
                 data = yaml.safe_load(m.group(1)) or {}
             except Exception:
                 data = {}
@@ -54,7 +54,9 @@ class SkillsLoader:
         else:
             name = dirname
             desc = ""
-        return SkillMeta(name=str(name), description=str(desc), path=str(path), source=label)
+        return SkillMeta(
+            name=str(name), description=str(desc), path=str(path), source=label
+        )
 
     @property
     def catalog(self) -> str:

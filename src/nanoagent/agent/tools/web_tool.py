@@ -1,4 +1,5 @@
 """Web tools: web_search and web_fetch without LangChain dependencies."""
+
 import html
 import ipaddress
 import json
@@ -132,12 +133,18 @@ class WebTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="web",
-            description="Web search and fetch capabilities with security hardening"
+            description="Web search and fetch capabilities with security hardening",
         )
 
-    def execute(self, action: str, query: str = None, url: str = None,
-                count: int = 5, extract_mode: Literal["markdown", "text"] = "markdown",
-                max_chars: int = 50000) -> str:
+    def execute(
+        self,
+        action: str,
+        query: str = None,
+        url: str = None,
+        count: int = 5,
+        extract_mode: Literal["markdown", "text"] = "markdown",
+        max_chars: int = 50000,
+    ) -> str:
         """
         Perform web actions.
         Actions: web_search, web_fetch
@@ -180,7 +187,9 @@ class WebTool(BaseTool):
 
                 lines = [f"Results for: {query}\n"]
                 for i, item in enumerate(results, 1):
-                    lines.append(f"{i}. {item.get('title', '')}\n   {item.get('href', '')}")
+                    lines.append(
+                        f"{i}. {item.get('title', '')}\n   {item.get('href', '')}"
+                    )
                     if body := item.get("body"):
                         lines.append(f"   {body}")
                 return "\n".join(lines)
@@ -192,14 +201,17 @@ class WebTool(BaseTool):
         return "Search completed"
 
     def _web_fetch(
-        self, url: str,
+        self,
+        url: str,
         extract_mode: Literal["markdown", "text"] = "markdown",
         max_chars: int = 50000,
     ) -> str:
         """Fetch and extract content from a URL using Readability."""
         is_valid, error_msg = _validate_url(url)
         if not is_valid:
-            return json.dumps({"error": f"URL validation failed: {error_msg}", "url": url})
+            return json.dumps(
+                {"error": f"URL validation failed: {error_msg}", "url": url}
+            )
 
         try:
             import asyncio
