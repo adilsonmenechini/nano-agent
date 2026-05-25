@@ -12,3 +12,4 @@ dist/
 .langgraph_api/
 .vulture
 .sisyphus
+memory.db

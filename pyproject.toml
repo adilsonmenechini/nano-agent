@@ -12,6 +12,8 @@ dependencies = [
     "mcp>=1.0.0",
     "rich>=15.0.0",
     "pyyaml>=6.0.3",
+    "ddgs>=9.14.4",
+    "readability-lxml>=0.8.4.1",
 ]
 
 [project.optional-dependencies]

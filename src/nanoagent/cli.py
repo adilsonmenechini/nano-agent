@@ -181,7 +181,17 @@ def _print_welcome():
         │   ⚡ NanoAgent   │
         └──────────────────┘
     [/bold green]""")
-    console.print("[bold cyan]NanoAgent[/bold cyan] [dim]v0.1.0[/dim]"),
+    console.print("[dim]v0.1.0[/dim]"),
+    console.print("[dim]/help - show commands | /exit - quit[/dim]")
+    console.print()
+
+def _print_full_help():
+    console.print("""[bold green]
+        ┌──────────────────┐
+        │   ⚡ NanoAgent   │
+        └──────────────────┘
+    [/bold green]""")
+    console.print("[dim]v0.1.0[/dim]"),
     console.print("\n[bold]Commands:[/bold]"),
     commands = [
         ("/help", "Show available commands"),
@@ -262,7 +272,7 @@ def chat(provider, project_path):
             continue
 
         if raw in ("/help", "help"):
-            _print_welcome()
+            _print_full_help()
             continue
 
         if raw in ("/clear", "clear"):
