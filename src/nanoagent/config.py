@@ -29,12 +29,12 @@ class AgentConfig:
         default_factory=lambda: {
             "openai": LLMProviderConfig(
                 api_key=os.getenv("OPENAI_API_KEY", ""),
-                base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                base_url=os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_URL", "https://api.openai.com/v1"),
                 model=os.getenv("OPENAI_MODEL", "gpt-4o"),
             ),
             "anthropic": LLMProviderConfig(
                 api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-                base_url=os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+                base_url=os.getenv("ANTHROPIC_BASE_URL") or os.getenv("ANTHROPIC_API_URL", "https://api.anthropic.com"),
                 model=os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
             ),
             "lmstudio": LLMProviderConfig(
