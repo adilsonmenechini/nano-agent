@@ -110,11 +110,41 @@ def test_background_review_and_session_flush():
 
 
 def test_make_agent_registers_local_tools():
-    from nanoagent.cli import _make_agent
+    import unittest.mock
+    with unittest.mock.patch("nanoagent.cli._resolve_provider", return_value=None):
+        from nanoagent.cli import _make_agent
+        agent = _make_agent(provider_name=None, project_path=None)
+        try:
+            assert "web" in agent.tools
+            assert "todo" in agent.tools
+        finally:
+            agent.memory.close()
 
-    agent = _make_agent(provider_name=None, project_path=None)
-    try:
-        assert "web" in agent.tools
-        assert "todo" in agent.tools
-    finally:
-        agent.memory.close()
+
+def test_check_config_output():
+    from nanoagent.cli import cli
+    from click.testing import CliRunner
+    runner = CliRunner()
+    result = runner.invoke(cli, ["check-config"])
+    assert result.exit_code == 0
+    assert "max_tokens" in result.output
+
+
+def test_check_config_json():
+    from nanoagent.cli import cli
+    from click.testing import CliRunner
+    runner = CliRunner()
+    result = runner.invoke(cli, ["check-config", "--json"])
+    assert result.exit_code == 0
+    assert "max_tokens" in result.output
+    # Should contain JSON keys
+    assert "default_provider" in result.output or '"max_tokens"' in result.output
+
+
+def test_health_command():
+    from nanoagent.cli import cli
+    from click.testing import CliRunner
+    runner = CliRunner()
+    result = runner.invoke(cli, ["health"])
+    # Exit 0 — providers may show error (no API keys), but the command itself runs
+    assert result.exit_code == 0

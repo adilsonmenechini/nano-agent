@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from nanoagent.tool import Tool, tool as _tool_decorator
 
@@ -50,3 +51,19 @@ class ToolRegistry:
             return str(result) if result is not None else ""
         except Exception as e:
             return f"Error executing {name}: {e}"
+
+    def execute_parallel(self, calls: list[tuple[str, dict]]) -> list[str]:
+        """Execute independent tool calls concurrently."""
+        results: list[str] = [""] * len(calls)
+        with ThreadPoolExecutor(max_workers=min(len(calls), 4)) as pool:
+            fut_map = {
+                pool.submit(self.execute, name, args): i
+                for i, (name, args) in enumerate(calls)
+            }
+            for fut in as_completed(fut_map):
+                idx = fut_map[fut]
+                try:
+                    results[idx] = fut.result()
+                except Exception as e:
+                    results[idx] = f"Error: {e}"
+        return results

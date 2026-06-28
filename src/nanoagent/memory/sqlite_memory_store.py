@@ -22,6 +22,7 @@ class SqliteMemoryEntry:
     corrected_to: str | None
     created: float
     last_referenced: float
+    embedding: bytes | None = None
 
 
 @dataclass
@@ -137,6 +138,26 @@ class SQLiteMemoryStore:
                 ON memories(target, project)
             """)
             self._create_fts_triggers()
+        # Add embedding column if not present (schema migration)
+        try:
+            self.conn.execute("ALTER TABLE memories ADD COLUMN embedding BLOB")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS skill_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                skill_id INTEGER NOT NULL,
+                version INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                description TEXT,
+                created REAL NOT NULL,
+                FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+            )
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_skill_versions_skill
+            ON skill_versions(skill_id)
+        """)
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
@@ -290,11 +311,19 @@ class SQLiteMemoryStore:
                 )
 
         now = time.time()
+        embedding_blob: bytes | None = None
+        try:
+            from .embeddings import compute_embedding
+            emb = compute_embedding(value)
+            import struct
+            embedding_blob = struct.pack(f"{len(emb)}d", *emb)
+        except Exception:
+            embedding_blob = None
         self.conn.execute(
             """INSERT INTO memories (project, target, category, key, content,
-               failure_reason, tool_state, corrected_to, created, last_referenced)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (project_id, target, category, key, value, None, None, None, now, now),
+               failure_reason, tool_state, corrected_to, created, last_referenced, embedding)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (project_id, target, category, key, value, None, None, None, now, now, embedding_blob),
         )
         self.conn.commit()
 
@@ -335,6 +364,36 @@ class SQLiteMemoryStore:
         params.append(limit)
         cursor = self.conn.execute(sql, params)
         return [self._map_row(row) for row in cursor.fetchall()]
+
+    def semantic_search(
+        self, query: str, target: str | None = None, limit: int = 10, alpha: float = 0.5
+    ) -> list[SqliteMemoryEntry]:
+        """Hybrid search: FTS5 keyword match ranked by cosine similarity.
+
+        alpha=1.0 → pure semantic, alpha=0.0 → pure FTS5
+        """
+        from .embeddings import compute_embedding, cosine_similarity
+        import struct
+
+        query_emb = compute_embedding(query)
+
+        fts_results = self.search(query, target=target, limit=limit * 2)
+
+        scored: list[tuple[float, SqliteMemoryEntry]] = []
+        for entry in fts_results:
+            cursor = self.conn.execute(
+                "SELECT embedding FROM memories WHERE id = ?", (entry.id,)
+            )
+            row = cursor.fetchone()
+            if row and row["embedding"]:
+                stored = list(struct.unpack(f"{len(row['embedding']) // 8}d", row["embedding"]))
+                sim = cosine_similarity(query_emb, stored)
+            else:
+                sim = 0.0
+            scored.append((alpha * sim + (1 - alpha), entry))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [entry for _, entry in scored[:limit]]
 
     def remove(
         self, target: str, scope: str, key: str, project_path: str | None = None
@@ -689,9 +748,15 @@ class SQLiteMemoryStore:
     def delete_skill(
         self, slug: str, scope: str = "global", project_path: str | None = None
     ) -> bool:
-        """Delete a skill."""
+        """Delete a skill and its version history."""
         where, params = self._project_filter(scope, project_path)
         where = where.replace("project", "project_id")
+        # Delete FK-referencing versions first (safe even with CASCADE)
+        self.conn.execute(
+            f"DELETE FROM skill_versions WHERE skill_id IN "
+            f"(SELECT id FROM skills WHERE slug = ? AND scope = ? AND {where})",
+            [slug, scope] + params,
+        )
         cursor = self.conn.execute(
             f"DELETE FROM skills WHERE slug = ? AND scope = ? AND {where}",
             [slug, scope] + params,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, Any
 
 
 class SkillMeta(NamedTuple):
@@ -13,6 +13,49 @@ class SkillMeta(NamedTuple):
 
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\r?\n(.*?)\r?\n---\s*\r?\n?", re.DOTALL)
+
+
+class SkillContext:
+    """Runtime context injected into DB-loaded skills."""
+
+    def __init__(
+        self,
+        tools: dict[str, Any] | None = None,
+        memory: Any | None = None,
+        logger: Any | None = None,
+    ):
+        self.tools = tools or {}
+        self.memory = memory
+        self.logger = logger
+
+
+class SkillWrapper:
+    """Wraps DB-loaded code into a callable skill with context injection."""
+
+    def __init__(self, name: str, code: str, context: SkillContext):
+        self.name = name
+        self.code = code
+        self.context = context
+        self._fn = self._compile(code)
+        self.description = ""
+
+    def _compile(self, code: str) -> Any:
+        local_ns: dict[str, Any] = {}
+        exec(compile(code, f"<skill_{self.name}>", "exec"), local_ns)
+        if "execute" in local_ns:
+            return local_ns["execute"]
+        if "run" in local_ns:
+            return local_ns["run"]
+        return None
+
+    @property
+    def execute(self) -> Any:
+        return self._fn
+
+    def __call__(self, **kwargs) -> Any:
+        if self._fn:
+            return self._fn(context=self.context, **kwargs)
+        return f"Skill '{self.name}' has no callable entry point"
 
 
 class SkillsLoader:
@@ -82,3 +125,25 @@ class SkillsLoader:
     @property
     def names(self) -> list[str]:
         return list(self._skills.keys())
+
+    @staticmethod
+    def load_from_db(
+        skill_storage: Any,
+        context: SkillContext | None = None,
+        scope: str = "global",
+        project_path: str | None = None,
+    ) -> dict[str, SkillWrapper]:
+        """Query all skills from DB and return as callable SkillWrappers."""
+        if context is None:
+            context = SkillContext()
+        db_skills = skill_storage.list_skills(scope=scope, project_path=project_path)
+        result: dict[str, SkillWrapper] = {}
+        for s in db_skills:
+            wrapper = SkillWrapper(
+                name=s["slug"],
+                code=s["code"],
+                context=context,
+            )
+            wrapper.description = s.get("description", "")
+            result[wrapper.name] = wrapper
+        return result

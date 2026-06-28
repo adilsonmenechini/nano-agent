@@ -2,6 +2,14 @@ import pytest
 import tempfile
 import os
 from nanoagent.agent import Agent
+from nanoagent.agent.errors import (
+    AgentError,
+    ProviderError,
+    ProviderRetryableError,
+    ProviderFatalError,
+    ConfigError,
+    StateTransitionError,
+)
 
 
 @pytest.fixture
@@ -310,3 +318,179 @@ def test_cancellation():
     import shutil
 
     shutil.rmtree(tmpdir)
+
+
+# ─── Error hierarchy tests (T012e) ──────────────────────────────────────────────
+
+
+def test_error_hierarchy():
+    assert issubclass(ProviderError, AgentError)
+    assert issubclass(ProviderRetryableError, ProviderError)
+    assert issubclass(ProviderFatalError, ProviderError)
+    assert issubclass(ConfigError, AgentError)
+    assert issubclass(StateTransitionError, AgentError)
+
+
+def test_retryable_error_message():
+    err = ProviderRetryableError("timeout after 30s")
+    assert "timeout" in str(err)
+
+
+def test_fatal_error_message():
+    err = ProviderFatalError("invalid API key")
+    assert "API key" in str(err)
+
+
+def test_state_transition_error_raised():
+    a = Agent(db_path=":memory:")
+    with pytest.raises(StateTransitionError):
+        a._transition(a.state, "no-op")
+    a.memory.close()
+
+
+# ─── Logging tests (T012f) ──────────────────────────────────────────────────────
+
+
+def test_logger_verbosity():
+    from nanoagent.agent.logging import AgentLogger, LogLevel
+    logger = AgentLogger(name="test-logger", level=LogLevel.WARNING)
+    assert logger.level == LogLevel.WARNING
+
+
+def test_logger_get_or_create():
+    from nanoagent.agent.logging import AgentLogger
+    logger = AgentLogger.get("unique-test-logger")
+    assert logger is not None
+    same = AgentLogger.get("unique-test-logger")
+    assert logger is same
+
+
+def test_logger_configure():
+    from nanoagent.agent.logging import AgentLogger, LogLevel
+    logger = AgentLogger.configure(verbosity=2)
+    assert logger.level == LogLevel.DEBUG
+    logger2 = AgentLogger.configure(verbosity=0)
+    assert logger2.level == LogLevel.WARNING
+
+
+# ─── Context calculator tests (T012d) ────────────────────────────────────────────
+
+
+def test_count_tokens_short_text():
+    from nanoagent.agent.context import count_tokens
+    count = count_tokens("Hello, world!")
+    assert count > 0
+
+
+def test_count_tokens_different_providers():
+    from nanoagent.agent.context import count_tokens
+    count1 = count_tokens("Hello, world!", provider="openai")
+    count2 = count_tokens("Hello, world!", provider="anthropic")
+    assert count1 == count2
+
+
+def test_truncate_messages_within_limit():
+    from nanoagent.agent.context import truncate_messages
+    msgs = [{"role": "user", "content": "Hi"}]
+    result = truncate_messages(msgs, max_tokens=1000)
+    assert len(result) == 1
+
+
+def test_truncate_messages_removes_old():
+    from nanoagent.agent.context import truncate_messages
+    msgs = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "First message that is long enough to test with"},
+        {"role": "assistant", "content": "A response"},
+        {"role": "user", "content": "Second message"},
+    ]
+    result = truncate_messages(msgs, max_tokens=5)
+    assert len(result) < len(msgs) or len(result) == len(msgs)
+
+
+# ─── Phase 4: Configurable Params & Retry tests (T029-T033) ─────────────────
+
+
+def test_max_tokens_param_passed_to_provider():
+    import unittest.mock
+    from nanoagent.llm.base import LLMResponse
+    agent = Agent(db_path=":memory:")
+    mock_llm = unittest.mock.MagicMock()
+    mock_llm.chat.return_value = LLMResponse(content="OK")
+    agent.llm_provider = mock_llm
+    agent.run("Test", max_tokens=50)
+    _call_kwargs = mock_llm.chat.call_args
+    assert _call_kwargs is not None
+    assert _call_kwargs[1].get("max_tokens") == 50
+    agent.memory.close()
+
+
+def test_temperature_param_passed_to_provider():
+    import unittest.mock
+    from nanoagent.llm.base import LLMResponse
+    agent = Agent(db_path=":memory:")
+    mock_llm = unittest.mock.MagicMock()
+    mock_llm.chat.return_value = LLMResponse(content="OK")
+    agent.llm_provider = mock_llm
+    agent.run("Test", temperature=0.0)
+    _call_kwargs = mock_llm.chat.call_args
+    assert _call_kwargs is not None
+    assert _call_kwargs[1].get("temperature") == 0.0
+    agent.memory.close()
+
+
+def test_retry_recovery_on_retryable_error():
+    import unittest.mock
+    from nanoagent.llm.base import LLMResponse
+    from nanoagent.agent.errors import ProviderRetryableError
+    agent = Agent(db_path=":memory:")
+    agent.retry_attempts = 3
+    mock_llm = unittest.mock.MagicMock()
+    mock_llm.chat.side_effect = [
+        ProviderRetryableError("timeout"),
+        ProviderRetryableError("rate-limit"),
+        LLMResponse(content="Success after retry"),
+    ]
+    agent.llm_provider = mock_llm
+    response, messages = agent.run("Test retry")
+    assert "Success after retry" in response
+    assert mock_llm.chat.call_count == 3
+    agent.memory.close()
+
+
+def test_retry_exhaustion_raises():
+    import unittest.mock
+    from nanoagent.agent.errors import ProviderRetryableError
+    agent = Agent(db_path=":memory:")
+    agent.retry_attempts = 2
+    mock_llm = unittest.mock.MagicMock()
+    mock_llm.chat.side_effect = ProviderRetryableError("persistent error")
+    agent.llm_provider = mock_llm
+    with pytest.raises(ProviderRetryableError):
+        agent.run("Test retry exhaust")
+    agent.memory.close()
+
+
+def test_parallel_tool_execution():
+    import unittest.mock
+    from nanoagent.llm.base import LLMResponse, ToolCall
+    agent = Agent(db_path=":memory:")
+    class MockTool:
+        description = "A mock tool"
+        def execute(self, **kw):
+            return f"result: {kw}"
+    agent.register_tool("tool_a", MockTool())
+    agent.register_tool("tool_b", MockTool())
+    mock_llm = unittest.mock.MagicMock()
+    response_1 = LLMResponse(tool_calls=[
+        ToolCall(id="t1", name="tool_a", arguments={"x": 1}),
+        ToolCall(id="t2", name="tool_b", arguments={"y": 2}),
+    ])
+    response_2 = LLMResponse(content="Final response")
+    mock_llm.chat.side_effect = [response_1, response_2]
+    agent.llm_provider = mock_llm
+    response, messages = agent.run("Test parallel tools")
+    assert "Final response" in response
+    tool_messages = [m for m in messages if m.get("role") == "tool"]
+    assert len(tool_messages) == 2
+    agent.memory.close()

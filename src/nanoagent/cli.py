@@ -213,6 +213,27 @@ def _run_consolidation(agent: Agent, target: str) -> None:
         pass
 
 
+def _check_config(output_json: bool = False) -> None:
+    """Print current config sources and values."""
+    import json as _json
+    config = AgentConfig()
+    info = {
+        "default_provider": config.default_provider,
+        "project_path": config.project_path,
+        "max_tokens": config.max_tokens,
+        "temperature": config.temperature,
+        "retry_attempts": config.retry_attempts,
+        "stream": config.stream,
+        "review_enabled": config.review_enabled,
+        "providers": {k: {"model": v.model, "base_url": v.base_url} for k, v in config.providers.items()},
+    }
+    if output_json:
+        click.echo(_json.dumps(info, indent=2))
+    else:
+        for k, v in info.items():
+            click.echo(f"{k}: {v}")
+
+
 def _make_agent(provider_name: str | None, project_path: str | None) -> Agent:
     config = AgentConfig()
     project_path = project_path or config.project_path
@@ -673,6 +694,54 @@ def cli():
 
 
 @cli.command()
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def check_config(output_json):
+    """Show current configuration sources and values."""
+    _check_config(output_json=output_json)
+
+
+@cli.command()
+@click.option("--provider", "-pr", default=None, help="Provider to check (default: all)")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def health(provider, output_json):
+    """Check provider connectivity status."""
+    import json as _json
+    config = AgentConfig()
+    providers_to_check: list[tuple[str, type[BaseLLMProvider]]] = []
+    if provider and provider in _PROVIDER_FACTORY:
+        providers_to_check = [(provider, _PROVIDER_FACTORY[provider])]
+    elif provider:
+        click.echo(f"Unknown provider: {provider}")
+        return
+    else:
+        providers_to_check = list(_PROVIDER_FACTORY.items())
+
+    results: dict[str, str] = {}
+    for name, factory in providers_to_check:
+        try:
+            provider_config = config.providers.get(name)
+            if provider_config:
+                inst = factory(
+                    api_key=provider_config.api_key,
+                    base_url=provider_config.base_url,
+                    model=provider_config.model,
+                )
+            else:
+                inst = factory()
+            inst.chat(messages=[{"role": "user", "content": "ping"}], max_tokens=1)
+            results[name] = "connected"
+        except Exception as e:
+            results[name] = f"error: {e}"
+
+    if output_json:
+        click.echo(_json.dumps(results, indent=2))
+    else:
+        for name, status in results.items():
+            color = "green" if status == "connected" else "red"
+            click.echo(click.style(f"  {name}: {status}", fg=color))
+
+
+@cli.command()
 @click.option("--prompt", "-p", prompt="Enter your prompt")
 @click.option("--provider", "-pr", default=None)
 @click.option("--project-path", "-pp", default=None)
@@ -694,9 +763,28 @@ def chat(provider, project_path):
 
     _print_welcome()
 
+    _repl_completer = None
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import WordCompleter
+        from prompt_toolkit.formatted_text import HTML
+        _repl_words = [
+            "help", "clear", "history", "tools", "skills", "jobs",
+            "pause", "resume", "cancel", "memory-search", "memory-insights",
+            "memory-forget", "memory-consolidate", "shell", "exit", "quit",
+        ]
+        _repl_completer = WordCompleter(_repl_words, ignore_case=True)
+        _repl_session = PromptSession(completer=_repl_completer)
+        _use_pt = True
+    except ImportError:
+        _use_pt = False
+
     while True:
         try:
-            raw = console.input("[bold green]you[/bold green] [dim]›[/dim] ").strip()
+            if _use_pt and _repl_completer is not None:
+                raw = _repl_session.prompt(HTML("<b><style fg='green'>you</style></b> <style fg='gray'>›</style> ")).strip()
+            else:
+                raw = console.input("[bold green]you[/bold green] [dim]›[/dim] ").strip()
         except (EOFError, KeyboardInterrupt):
             console.print()
             if session_id and messages:

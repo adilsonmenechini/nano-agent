@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Generator
 
 
 @dataclass
@@ -17,6 +17,12 @@ class LLMResponse:
     content: str | None = None
     tool_calls: list[ToolCall] | None = None
     usage: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class StreamEvent:
+    type: str  # "content", "tool_call", "done"
+    delta: str | dict | None = None
 
 
 class BaseLLMProvider(ABC):
@@ -53,12 +59,39 @@ class BaseLLMProvider(ABC):
             )
         return result.content or ""
 
-    @abstractmethod
     def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        system_prompt: str | None = None,
+        stream: bool = False,
+        **kwargs,
+    ) -> LLMResponse | Generator[StreamEvent, None, None]:
+        if stream:
+            return self._chat_stream(messages, tools=tools, system_prompt=system_prompt, **kwargs)
+        return self._chat(messages, tools=tools, system_prompt=system_prompt, **kwargs)
+
+    @abstractmethod
+    def _chat(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         system_prompt: str | None = None,
         **kwargs,
     ) -> LLMResponse:
-        pass
+        ...
+
+    def _chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        system_prompt: str | None = None,
+        **kwargs,
+    ) -> Generator[StreamEvent, None, None]:
+        """Override in provider subclass to support streaming."""
+        result = self._chat(messages, tools=tools, system_prompt=system_prompt, **kwargs)
+        yield StreamEvent(type="content", delta=result.content or "")
+        if result.tool_calls:
+            for tc in result.tool_calls:
+                yield StreamEvent(type="tool_call", delta={"id": tc.id, "name": tc.name, "arguments": tc.arguments})
+        yield StreamEvent(type="done")
