@@ -745,21 +745,37 @@ def health(provider, output_json):
 @click.option("--prompt", "-p", prompt="Enter your prompt")
 @click.option("--provider", "-pr", default=None)
 @click.option("--project-path", "-pp", default=None)
-def run(prompt, provider, project_path):
+@click.option("--diagnostics", is_flag=True, help="Show turn diagnostics")
+def run(prompt, provider, project_path, diagnostics):
     agent = _make_agent(provider, project_path)
     system_prompt = _build_system_prompt(agent.project_path)
+    diagnostics_collector = None
+    if diagnostics:
+        from nanoagent.loop.diagnostics import DiagnosticsCollector
+        diagnostics_collector = DiagnosticsCollector(enabled=True)
     response, _ = agent.run(prompt, system_prompt=system_prompt)
     click.echo(response)
+    if diagnostics and diagnostics_collector is not None:
+        rendered = diagnostics_collector.render()
+        if rendered:
+            console.print(rendered)
 
 
 @cli.command()
 @click.option("--provider", "-pr", default=None)
 @click.option("--project-path", "-pp", default=None)
-def chat(provider, project_path):
+@click.option("--diagnostics", is_flag=True, help="Show turn diagnostics")
+@click.option("--health", is_flag=True, help="Show health indicator in prompt")
+def chat(provider, project_path, diagnostics, health):
     agent = _make_agent(provider, project_path)
     system_prompt = _build_system_prompt(agent.project_path)
     messages: list[dict] = []
     session_id: str | None = str(uuid.uuid4())[:12]
+
+    diagnostics_collector = None
+    if diagnostics or health:
+        from nanoagent.loop.diagnostics import DiagnosticsCollector
+        diagnostics_collector = DiagnosticsCollector(enabled=diagnostics)
 
     _print_welcome()
 
@@ -782,9 +798,26 @@ def chat(provider, project_path):
     while True:
         try:
             if _use_pt and _repl_completer is not None:
-                raw = _repl_session.prompt(HTML("<b><style fg='green'>you</style></b> <style fg='gray'>›</style> ")).strip()
+                prompt_text = "<b><style fg='green'>you</style></b> <style fg='gray'>›</style> "
+                if health and diagnostics_collector is not None:
+                    report = diagnostics_collector.report()
+                    if report.health_snapshots:
+                        last = report.health_snapshots[-1]
+                        level = last.get("level", "healthy")
+                        color = "green" if level == "healthy" else "yellow" if level == "warning" else "red"
+                        prompt_text = f"<b><style fg='green'>you</style></b> <b><style fg='{color}'>{level[0]}</style></b> <style fg='gray'>›</style> "
+                raw = _repl_session.prompt(HTML(prompt_text)).strip()
             else:
-                raw = console.input("[bold green]you[/bold green] [dim]›[/dim] ").strip()
+                prompt_suffix = ""
+                if health and diagnostics_collector is not None:
+                    report = diagnostics_collector.report()
+                    if report.health_snapshots:
+                        last = report.health_snapshots[-1]
+                        level = last.get("level", "healthy")
+                        colors = {"healthy": "green", "warning": "yellow", "degraded": "yellow", "critical": "red"}
+                        color = colors.get(level, "green")
+                        prompt_suffix = f" [{color}]{level[0]}[/{color}]"
+                raw = console.input(f"[bold green]you[/bold green]{prompt_suffix} [dim]›[/dim] ").strip()
         except (EOFError, KeyboardInterrupt):
             console.print()
             if session_id and messages:
@@ -877,6 +910,10 @@ def chat(provider, project_path):
             if response:
                 console.print("[bold purple]nano[/bold purple] [dim]›[/dim]")
                 console.print(Markdown(response))
+            if diagnostics and diagnostics_collector is not None:
+                rendered = diagnostics_collector.render()
+                if rendered:
+                    console.print(rendered)
 
 
 if __name__ == "__main__":

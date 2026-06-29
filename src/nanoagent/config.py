@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, List
 from dotenv import load_dotenv
+from nanoagent.loop.constants import DEFAULT_CONFIG, LoopConfig
 
 # Load environment variables from .env file
 load_dotenv()
@@ -83,6 +84,7 @@ class AgentConfig:
     stream: bool = True
     providers: dict = field(default_factory=dict)
     mcp_servers: List[str] = field(default_factory=list)
+    loop: LoopConfig = field(default_factory=lambda: DEFAULT_CONFIG)
 
     def __init__(self, config_path: str | None = None):
         toml = _load_toml_config(Path(config_path) if config_path else _CONFIG_FILE_PATH)
@@ -186,6 +188,50 @@ class AgentConfig:
         self.mcp_servers = [
             s.strip() for s in mcp_val.split(",") if s.strip()
         ]
+
+        loop_section = toml.get("loop", {}) if isinstance(toml.get("loop"), dict) else {}
+        self.loop = LoopConfig(
+            max_steps_per_turn=int(
+                os.getenv("NANOAGENT_MAX_STEPS", str(
+                    _get_toml_int(loop_section, "max_steps_per_turn", default=50)
+                ))
+            ),
+            tool_timeout_seconds=float(
+                os.getenv("NANOAGENT_TOOL_TIMEOUT", str(
+                    _get_toml_float(loop_section, "tool_timeout_seconds", default=30.0)
+                ))
+            ),
+            llm_timeout_seconds=float(
+                os.getenv("NANOAGENT_LLM_TIMEOUT", str(
+                    _get_toml_float(loop_section, "llm_timeout_seconds", default=120.0)
+                ))
+            ),
+            stall_threshold=int(
+                os.getenv("NANOAGENT_STALL_THRESHOLD", str(
+                    _get_toml_int(loop_section, "stall_threshold", default=5)
+                ))
+            ),
+            oscillation_window=int(
+                os.getenv("NANOAGENT_OSCILLATION_WINDOW", str(
+                    _get_toml_int(loop_section, "oscillation_window", default=3)
+                ))
+            ),
+            compaction_threshold=float(
+                os.getenv("NANOAGENT_COMPACTION_THRESHOLD", str(
+                    _get_toml_float(loop_section, "compaction_threshold", default=0.80)
+                ))
+            ),
+            diagnostics_enabled=(
+                os.getenv("NANOAGENT_DIAGNOSTICS", str(
+                    _get_toml_bool(loop_section, "diagnostics_enabled", default=False)
+                )).lower() in ("true", "1", "yes")
+            ),
+            health_window_size=int(
+                os.getenv("NANOAGENT_HEALTH_WINDOW", str(
+                    _get_toml_int(loop_section, "health_window_size", default=20)
+                ))
+            ),
+        )
 
     def get_provider_config(self, provider_name: str) -> Optional[LLMProviderConfig]:
         return self.providers.get(provider_name)

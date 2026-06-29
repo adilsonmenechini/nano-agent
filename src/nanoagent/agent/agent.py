@@ -102,6 +102,9 @@ class Agent:
         self.pause_event.set()
         self.loop_warning_count = 0
         self._prev_tool_sigs: list[tuple[str, str]] | None = None
+        self.loop_config: object | None = None
+        self.progress_controller: object | None = None
+        self.diagnostics_collector: object | None = None
 
         # ── Callbacks ──────────────────────────────────────────────────────
         # on_state_change(transition) → called on every state transition
@@ -351,6 +354,7 @@ class Agent:
         session_id: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        turn: object | None = None,
     ) -> tuple[str, list[dict]]:
         if not self.llm_provider:
             return f"Agent received: {prompt}", []
@@ -359,6 +363,13 @@ class Agent:
         self.loop_warning_count = 0
         self._prev_tool_sigs = None
         self.pause_event.set()
+
+        if turn is not None:
+            stop_reason = getattr(turn, "start", lambda p: None)(prompt)
+            if stop_reason and getattr(stop_reason, "value", None) in (
+                "done", "max_steps", "error",
+            ):
+                return "Turn blocked before execution.", messages if messages else []
 
         if session_id:
             stored = self.memory.load_session(session_id)
@@ -393,6 +404,12 @@ class Agent:
                     self.on_cancelled()
                 return "Execution cancelled.", messages
 
+            if turn is not None:
+                budget = getattr(turn, "budget", None)
+                if budget is not None and getattr(budget, "budget_exhausted", False):
+                    messages.append({"role": "assistant", "content": "Turn budget exhausted."})
+                    return "Turn budget exhausted.", messages
+
             self.pause_event.wait()
             if self.on_paused:
                 self.on_paused()
@@ -414,6 +431,11 @@ class Agent:
             except Exception as exc:
                 self._transition(AgentState.ERROR, f"LLM call failed: {exc}")
                 raise
+
+            if turn is not None:
+                budget = getattr(turn, "budget", None)
+                if budget is not None:
+                    budget.total_llm_calls += 1
 
             if self.cancelled:
                 self._transition(AgentState.IDLE, "cancelled")
@@ -512,6 +534,16 @@ class Agent:
                     )
 
                 self._transition(AgentState.THINKING, "tool results ready, continuing")
+
+                if turn is not None:
+                    budget = getattr(turn, "budget", None)
+                    if budget is not None:
+                        budget.total_tool_calls += len(response.tool_calls)
+                    ev_result = getattr(turn, "evaluate_progress", lambda: None)()
+                    if ev_result is not None:
+                        action = getattr(ev_result, "action", None)
+                        if action and getattr(action, "value", "") == "stop":
+                            return "Turn stopped by progress controller.", messages
             else:
                 self.loop_warning_count = 0
                 self._prev_tool_sigs = None
