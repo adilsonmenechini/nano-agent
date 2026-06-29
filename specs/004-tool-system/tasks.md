@@ -25,10 +25,10 @@ description: "Task list for Agent Tool System feature implementation"
 
 **Purpose**: Create package scaffolding for new modules
 
-- [ ] T001 [P] Create `agent/tools/__init__.py` that exports all built-in tool functions in `src/nanoagent/agent/tools/__init__.py`
-- [ ] T002 [P] Create `permissions.py` skeleton with PermissionMode enum in `src/nanoagent/permissions.py`
-- [ ] T003 [P] Create `truncation.py` skeleton with OutputTruncator stub in `src/nanoagent/truncation.py`
-- [ ] T004 Update `__init__.py` to export new public symbols (PermissionManager, OutputTruncator, register_builtin_tools) in `src/nanoagent/__init__.py`
+- [X] T001 [P] Create `agent/tools/__init__.py` that exports all built-in tool functions in `src/nanoagent/agent/tools/__init__.py`
+- [X] T002 [P] Create `permissions.py` skeleton with PermissionMode enum in `src/nanoagent/permissions.py`
+- [X] T003 [P] Create `truncation.py` skeleton with OutputTruncator stub in `src/nanoagent/truncation.py`
+- [X] T004 Update `__init__.py` to export new public symbols (PermissionManager, OutputTruncator, register_builtin_tools) in `src/nanoagent/__init__.py`
 
 ---
 
@@ -40,17 +40,17 @@ description: "Task list for Agent Tool System feature implementation"
 
 ### Test Tasks
 
-- [ ] T005 (Test) Test truncation within threshold — output unchanged in `tests/test_truncation.py`
-- [ ] T006 (Test) Test truncation exceeding threshold — truncated with marker in `tests/test_truncation.py`
-- [ ] T007 (Test) Test truncation snaps to line boundary — mid-line truncation returns to previous `\n` in `tests/test_truncation.py`
-- [ ] T008 (Test) Test edge case: no newline before threshold — truncates at max_chars in `tests/test_truncation.py`
-- [ ] T009 (Test) Test zero-length output — passes through unchanged in `tests/test_truncation.py`
-- [ ] T010 (Test) Test configurable max_chars in `tests/test_truncation.py`
+- [X] T005 (Test) Test truncation within threshold — output unchanged in `tests/test_truncation.py`
+- [X] T006 (Test) Test truncation exceeding threshold — truncated with marker in `tests/test_truncation.py`
+- [X] T007 (Test) Test truncation snaps to line boundary — mid-line truncation returns to previous `\n` in `tests/test_truncation.py`
+- [X] T008 (Test) Test edge case: no newline before threshold — truncates at max_chars in `tests/test_truncation.py`
+- [X] T009 (Test) Test zero-length output — passes through unchanged in `tests/test_truncation.py`
+- [X] T010 (Test) Test configurable max_chars in `tests/test_truncation.py`
 
 ### Implementation Tasks
 
-- [ ] T011 Implement `OutputTruncator` class with `max_chars`, `suffix` fields in `src/nanoagent/truncation.py`
-- [ ] T012 Implement `truncate(text: str) -> str` method — counts lines/chars, truncates at line boundary, appends `[truncated N lines, M chars]` marker
+- [X] T011 Implement `OutputTruncator` class with `max_chars`, `suffix` fields in `src/nanoagent/truncation.py`
+- [X] T012 Implement `truncate(text: str) -> str` method — counts lines/chars, truncates at line boundary, appends `[truncated N lines, M chars]` marker
 
 ---
 
@@ -62,25 +62,25 @@ description: "Task list for Agent Tool System feature implementation"
 
 ### Test Tasks
 
-- [ ] T013 (Test) Test allow mode — matching rule returns ALLOWED in `tests/test_permissions.py`
-- [ ] T014 (Test) Test deny mode — matching rule returns DENIED in `tests/test_permissions.py`
-- [ ] T015 [P] (Test) Test ask mode — matching rule returns ASK in `tests/test_permissions.py`
-- [ ] T016 [P] (Test) Test exact matching — only exact command matched in `tests/test_permissions.py`
-- [ ] T017 [P] (Test) Test prefix matching — command starts with pattern in `tests/test_permissions.py`
-- [ ] T018 [P] (Test) Test regex matching — pattern regex matched against command in `tests/test_permissions.py`
-- [ ] T019 [P] (Test) Test no matching rule — falls back to default_mode in `tests/test_permissions.py`
-- [ ] T020 [P] (Test) Test `default_mode="deny"` — deny when no rule matches in `tests/test_permissions.py`
-- [ ] T021 [P] (Test) Test rule with tool_name="*" — applies to all tools in `tests/test_permissions.py`
-- [ ] T022 [P] (Test) Test multiple rules — most specific wins in `tests/test_permissions.py`
-- [ ] T023 [P] (Test) Test TOML config loading — permissions loaded from config dict in `tests/test_permissions.py`
+- [X] T013 (Test) Test allow mode — matching rule returns ALLOWED in `tests/test_permissions.py`
+- [X] T014 (Test) Test deny mode — matching rule returns DENIED in `tests/test_permissions.py`
+- [X] T015 [P] (Test) Test ask mode — matching rule returns ASK in `tests/test_permissions.py`
+- [X] T016 [P] (Test) Test exact matching — only exact command matched in `tests/test_permissions.py`
+- [X] T017 [P] (Test) Test prefix matching — command starts with pattern in `tests/test_permissions.py`
+- [X] T018 [P] (Test) Test regex matching — pattern regex matched against command in `tests/test_permissions.py`
+- [X] T019 [P] (Test) Test no matching rule — falls back to default_mode in `tests/test_permissions.py`
+- [X] T020 [P] (Test) Test `default_mode="deny"` — deny when no rule matches in `tests/test_permissions.py`
+- [X] T021 [P] (Test) Test rule with tool_name="*" — applies to all tools in `tests/test_permissions.py`
+- [X] T022 [P] (Test) Test multiple rules — most specific wins in `tests/test_permissions.py`
+- [X] T023 [P] (Test) Test TOML config loading — permissions loaded from config dict in `tests/test_permissions.py`
 
 ### Implementation Tasks
 
-- [ ] T024 Implement `PermissionMode` enum (`ALLOW`, `DENY`, `ASK`) and `PermissionRule` dataclass (`tool_name`, `match_type`, `pattern`, `mode`) in `src/nanoagent/permissions.py`
-- [ ] T025 [P] Implement `PermissionManager` class with `rules`, `default_mode` fields in `src/nanoagent/permissions.py`
-- [ ] T026 [P] Implement `add_rule(rule)` method in `src/nanoagent/permissions.py`
-- [ ] T027 Implement `check(tool_name, command="")` method — evaluates rules in priority order (exact > prefix > regex, tool-specific > wildcard), returns `PermissionMode` in `src/nanoagent/permissions.py`
-- [ ] T028 Implement `load_from_config(config_dict)` class method — parses `[tools.permissions]` TOML section into PermissionRule list in `src/nanoagent/permissions.py`
+- [X] T024 Implement `PermissionMode` enum (`ALLOW`, `DENY`, `ASK`) and `PermissionRule` dataclass (`tool_name`, `match_type`, `pattern`, `mode`) in `src/nanoagent/permissions.py`
+- [X] T025 [P] Implement `PermissionManager` class with `rules`, `default_mode` fields in `src/nanoagent/permissions.py`
+- [X] T026 [P] Implement `add_rule(rule)` method in `src/nanoagent/permissions.py`
+- [X] T027 Implement `check(tool_name, command="")` method — evaluates rules in priority order (exact > prefix > regex, tool-specific > wildcard), returns `PermissionMode` in `src/nanoagent/permissions.py`
+- [X] T028 Implement `load_from_config(config_dict)` class method — parses `[tools.permissions]` TOML section into PermissionRule list in `src/nanoagent/permissions.py`
 
 ---
 
@@ -94,19 +94,19 @@ description: "Task list for Agent Tool System feature implementation"
 
 ### Test Tasks
 
-- [ ] T029 (Test) Test basic shell command execution — returns stdout in `tests/test_shell_tool.py`
-- [ ] T030 [P] (Test) Test non-zero exit code — returns stderr and exit code in `tests/test_shell_tool.py`
-- [ ] T031 [P] (Test) Test command timeout — raises/returns timeout error in `tests/test_shell_tool.py`
-- [ ] T032 [P] (Test) Test empty command — returns error message in `tests/test_shell_tool.py`
-- [ ] T033 [P] (Test) Test working directory parameter — command runs in specified dir in `tests/test_shell_tool.py`
-- [ ] T034 [P] (Test) Test shell tool registration in ToolRegistry — works via `@tool` decorator in `tests/test_shell_tool.py`
+- [X] T029 (Test) Test basic shell command execution — returns stdout in `tests/test_shell_tool.py`
+- [X] T030 [P] (Test) Test non-zero exit code — returns stderr and exit code in `tests/test_shell_tool.py`
+- [X] T031 [P] (Test) Test command timeout — raises/returns timeout error in `tests/test_shell_tool.py`
+- [X] T032 [P] (Test) Test empty command — returns error message in `tests/test_shell_tool.py`
+- [X] T033 [P] (Test) Test working directory parameter — command runs in specified dir in `tests/test_shell_tool.py`
+- [X] T034 [P] (Test) Test shell tool registration in ToolRegistry — works via `@tool` decorator in `tests/test_shell_tool.py`
 
 ### Implementation Tasks
 
-- [ ] T035 Implement `run_shell` function with `@tool` decorator — parameters: `command: str`, `timeout: int = 30`, `workdir: str = ""` in `src/nanoagent/agent/tools/shell.py`
-- [ ] T036 Implement shell execution using `subprocess.run()` with `timeout` parameter, capturing stdout/stderr/returncode in `src/nanoagent/agent/tools/shell.py`
-- [ ] T037 Handle timeout via `subprocess.TimeoutExpired` — return structured error with timeout message in `src/nanoagent/agent/tools/shell.py`
-- [ ] T038 Handle non-zero exit codes — include exit code and stderr in return string in `src/nanoagent/agent/tools/shell.py`
+- [X] T035 Implement `run_shell` function with `@tool` decorator — parameters: `command: str`, `timeout: int = 30`, `workdir: str = ""` in `src/nanoagent/agent/tools/shell.py`
+- [X] T036 Implement shell execution using `subprocess.run()` with `timeout` parameter, capturing stdout/stderr/returncode in `src/nanoagent/agent/tools/shell.py`
+- [X] T037 Handle timeout via `subprocess.TimeoutExpired` — return structured error with timeout message in `src/nanoagent/agent/tools/shell.py`
+- [X] T038 Handle non-zero exit codes — include exit code and stderr in return string in `src/nanoagent/agent/tools/shell.py`
 
 ---
 
@@ -120,23 +120,23 @@ description: "Task list for Agent Tool System feature implementation"
 
 ### Test Tasks
 
-- [ ] T039 (Test) Test read_file — existing file returns contents in `tests/test_file_tools.py`
-- [ ] T040 [P] (Test) Test read_file — missing file returns not-found error in `tests/test_file_tools.py`
-- [ ] T041 [P] (Test) Test write_file — writes content to path and confirms success in `tests/test_file_tools.py`
-- [ ] T042 [P] (Test) Test glob_file — pattern matches expected files in `tests/test_file_tools.py`
-- [ ] T043 [P] (Test) Test grep_file — pattern finds matching lines in `tests/test_file_tools.py`
-- [ ] T044 [P] (Test) Test path traversal protection — write to path outside project dir returns error in `tests/test_file_tools.py`
-- [ ] T045 [P] (Test) Test read_file with binary content — handles non-UTF8 gracefully in `tests/test_file_tools.py`
-- [ ] T046 [P] (Test) Test file tool registration in ToolRegistry — works via `@tool` decorator in `tests/test_file_tools.py`
+- [X] T039 (Test) Test read_file — existing file returns contents in `tests/test_file_tools.py`
+- [X] T040 [P] (Test) Test read_file — missing file returns not-found error in `tests/test_file_tools.py`
+- [X] T041 [P] (Test) Test write_file — writes content to path and confirms success in `tests/test_file_tools.py`
+- [X] T042 [P] (Test) Test glob_file — pattern matches expected files in `tests/test_file_tools.py`
+- [X] T043 [P] (Test) Test grep_file — pattern finds matching lines in `tests/test_file_tools.py`
+- [X] T044 [P] (Test) Test path traversal protection — write to path outside project dir returns error in `tests/test_file_tools.py`
+- [X] T045 [P] (Test) Test read_file with binary content — handles non-UTF8 gracefully in `tests/test_file_tools.py`
+- [X] T046 [P] (Test) Test file tool registration in ToolRegistry — works via `@tool` decorator in `tests/test_file_tools.py`
 
 ### Implementation Tasks
 
-- [ ] T047 Implement `read_file` with `@tool` decorator — param `path: str`, opens file, returns contents in `src/nanoagent/agent/tools/file_tools.py`
-- [ ] T048 Implement `write_file` with `@tool` decorator — params `path: str`, `content: str`, writes to file in `src/nanoagent/agent/tools/file_tools.py`
-- [ ] T049 Implement `glob_file` with `@tool` decorator — params `pattern: str`, `path: str`, returns matching files in `src/nanoagent/agent/tools/file_tools.py`
-- [ ] T050 Implement `grep_file` with `@tool` decorator — params `pattern: str`, `path: str`, `context: int = 0`, returns matching lines with context in `src/nanoagent/agent/tools/file_tools.py`
-- [ ] T051 Implement `_validate_path(path)` helper — resolves path and checks `Path.resolve().is_relative_to(project_path)` for traversal protection in `src/nanoagent/agent/tools/file_tools.py`
-- [ ] T052 Implement error handling — FileNotFoundError, PermissionError, UnicodeDecodeError all return structured error messages in `src/nanoagent/agent/tools/file_tools.py`
+- [X] T047 Implement `read_file` with `@tool` decorator — param `path: str`, opens file, returns contents in `src/nanoagent/agent/tools/file_tools.py`
+- [X] T048 Implement `write_file` with `@tool` decorator — params `path: str`, `content: str`, writes to file in `src/nanoagent/agent/tools/file_tools.py`
+- [X] T049 Implement `glob_file` with `@tool` decorator — params `pattern: str`, `path: str`, returns matching files in `src/nanoagent/agent/tools/file_tools.py`
+- [X] T050 Implement `grep_file` with `@tool` decorator — params `pattern: str`, `path: str`, `context: int = 0`, returns matching lines with context in `src/nanoagent/agent/tools/file_tools.py`
+- [X] T051 Implement `_validate_path(path)` helper — resolves path and checks `Path.resolve().is_relative_to(project_path)` for traversal protection in `src/nanoagent/agent/tools/file_tools.py`
+- [X] T052 Implement error handling — FileNotFoundError, PermissionError, UnicodeDecodeError all return structured error messages in `src/nanoagent/agent/tools/file_tools.py`
 
 ---
 
@@ -150,20 +150,20 @@ description: "Task list for Agent Tool System feature implementation"
 
 ### Test Tasks
 
-- [ ] T053 (Test) Test git_status — returns status output in `tests/test_git_tools.py`
-- [ ] T054 [P] (Test) Test git_diff — returns diff output in `tests/test_git_tools.py`
-- [ ] T055 [P] (Test) Test git_log — returns commit history in `tests/test_git_tools.py`
-- [ ] T056 [P] (Test) Test git_log with max_count — returns limited entries in `tests/test_git_tools.py`
-- [ ] T057 [P] (Test) Test non-git directory — returns error message in `tests/test_git_tools.py`
-- [ ] T058 [P] (Test) Test git not installed — returns error message in `tests/test_git_tools.py`
-- [ ] T059 [P] (Test) Test git tool registration in ToolRegistry — works via `@tool` decorator in `tests/test_git_tools.py`
+- [X] T053 (Test) Test git_status — returns status output in `tests/test_git_tools.py`
+- [X] T054 [P] (Test) Test git_diff — returns diff output in `tests/test_git_tools.py`
+- [X] T055 [P] (Test) Test git_log — returns commit history in `tests/test_git_tools.py`
+- [X] T056 [P] (Test) Test git_log with max_count — returns limited entries in `tests/test_git_tools.py`
+- [X] T057 [P] (Test) Test non-git directory — returns error message in `tests/test_git_tools.py`
+- [X] T058 [P] (Test) Test git not installed — returns error message in `tests/test_git_tools.py`
+- [X] T059 [P] (Test) Test git tool registration in ToolRegistry — works via `@tool` decorator in `tests/test_git_tools.py`
 
 ### Implementation Tasks
 
-- [ ] T060 Implement `git_status` with `@tool` decorator — runs `git status --short` via subprocess in `src/nanoagent/agent/tools/git_tools.py`
-- [ ] T061 Implement `git_diff` with `@tool` decorator — runs `git diff` via subprocess in `src/nanoagent/agent/tools/git_tools.py`
-- [ ] T062 Implement `git_log` with `@tool` decorator — runs `git log --oneline -{max_count}` via subprocess in `src/nanoagent/agent/tools/git_tools.py`
-- [ ] T063 Implement `_git_cmd(args, path)` helper — runs git subprocess command, checks for git repo validity, handles `git not found` error in `src/nanoagent/agent/tools/git_tools.py`
+- [X] T060 Implement `git_status` with `@tool` decorator — runs `git status --short` via subprocess in `src/nanoagent/agent/tools/git_tools.py`
+- [X] T061 Implement `git_diff` with `@tool` decorator — runs `git diff` via subprocess in `src/nanoagent/agent/tools/git_tools.py`
+- [X] T062 Implement `git_log` with `@tool` decorator — runs `git log --oneline -{max_count}` via subprocess in `src/nanoagent/agent/tools/git_tools.py`
+- [X] T063 Implement `_git_cmd(args, path)` helper — runs git subprocess command, checks for git repo validity, handles `git not found` error in `src/nanoagent/agent/tools/git_tools.py`
 
 ---
 
@@ -171,13 +171,13 @@ description: "Task list for Agent Tool System feature implementation"
 
 **Purpose**: Wire everything together — register built-in tools at agent init, integrate PermissionManager and OutputTruncator into ToolRegistry.
 
-- [ ] T064 [P] Implement `register_builtin_tools(registry)` function — registers all shell/file/git tools in a ToolRegistry instance in `src/nanoagent/agent/tools/__init__.py`
-- [ ] T065 [P] Integrate PermissionManager into ToolRegistry — modify `ToolRegistry.execute()` to check permissions before execution, returning structured DENIED/ASK error in `src/nanoagent/registry.py`
-- [ ] T066 [P] Integrate OutputTruncator into ToolRegistry — modify `ToolRegistry.execute()` to truncate results after tool execution in `src/nanoagent/registry.py`
-- [ ] T067 Modify `Agent.__init__()` to call `register_builtin_tools()` and create PermissionManager from config in `src/nanoagent/agent/agent.py`
-- [ ] T068 (Test) Integration test — agent starts with all tools registered, permissions enforced, truncation active in `tests/integration/test_agent_full.py`
-- [ ] T069 (Test) End-to-end test — PermissionManager + OutputTruncator + ToolRegistry work together end-to-end in `tests/integration/test_tool_integration.py`
-- [ ] T070 Update AgentConfig to parse `[tools.permissions]` TOML section from config file in `src/nanoagent/config.py`
+- [X] T064 [P] Implement `register_builtin_tools(registry)` function — registers all shell/file/git tools in a ToolRegistry instance in `src/nanoagent/agent/tools/__init__.py`
+- [X] T065 [P] Integrate PermissionManager into ToolRegistry — modify `ToolRegistry.execute()` to check permissions before execution, returning structured DENIED/ASK error in `src/nanoagent/registry.py`
+- [X] T066 [P] Integrate OutputTruncator into ToolRegistry — modify `ToolRegistry.execute()` to truncate results after tool execution in `src/nanoagent/registry.py`
+- [X] T067 Modify `Agent.__init__()` to call `register_builtin_tools()` and create PermissionManager from config in `src/nanoagent/agent/agent.py`
+- [X] T068 (Test) Integration test — agent starts with all tools registered, permissions enforced, truncation active in `tests/integration/test_agent_full.py`
+- [X] T069 (Test) End-to-end test — PermissionManager + OutputTruncator + ToolRegistry work together end-to-end in `tests/integration/test_tool_integration.py`
+- [X] T070 Update AgentConfig to parse `[tools.permissions]` TOML section from config file in `src/nanoagent/config.py`
 
 ---
 
@@ -185,11 +185,11 @@ description: "Task list for Agent Tool System feature implementation"
 
 **Purpose**: Logging, documentation, edge case hardening.
 
-- [ ] T071 [P] Add tool invocation logging — log each tool call with timestamp, tool name, params, duration, outcome in `src/nanoagent/agent/logging.py` or new module
-- [ ] T072 [P] Update README.md with built-in tools documentation
-- [ ] T073 [P] Add example permissions config to `.env.example` or create `permissions.example.toml` in project root
-- [ ] T074 [P] Run full test suite — verify 80% coverage on `src/nanoagent/`
-- [ ] T075 [P] Run static analysis — Ruff, Pyright, Vulture (constitution gate)
+- [X] T071 [P] Add tool invocation logging — log each tool call with timestamp, tool name, params, duration, outcome in `src/nanoagent/agent/logging.py` or new module
+- [X] T072 [P] Update README.md with built-in tools documentation
+- [X] T073 [P] Add example permissions config to `.env.example` or create `permissions.example.toml` in project root
+- [X] T074 [P] Run full test suite — verify 80% coverage on `src/nanoagent/`
+- [X] T075 [P] Run static analysis — Ruff, Pyright, Vulture (constitution gate)
 
 ---
 
@@ -247,7 +247,7 @@ Each wave is independently testable via the Independent Test defined in each pha
 ## Format Validation
 
 All tasks above follow the required format:
-- `- [ ] Tnnn` — checkbox + sequential ID
+- `- [X] Tnnn` — checkbox + sequential ID
 - `[P]` present on parallelizable tasks
 - `[Story]` label on user story phase tasks (e.g., `US1`)
 - Exact file path in description

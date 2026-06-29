@@ -139,6 +139,8 @@ class SkillsLoader:
         db_skills = skill_storage.list_skills(scope=scope, project_path=project_path)
         result: dict[str, SkillWrapper] = {}
         for s in db_skills:
+            if s.get("status", "active") != "active":
+                continue
             wrapper = SkillWrapper(
                 name=s["slug"],
                 code=s["code"],

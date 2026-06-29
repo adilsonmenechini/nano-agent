@@ -76,3 +76,6 @@ class AgentLogger:
 
     def llm_request(self, model: str, tokens: int) -> None:
         self._logger.debug("LLM %s %d tokens", model, tokens)
+
+    def turn_complete(self, response: str, duration_ms: int) -> None:
+        self._logger.info("Turn completed in %dms — response: %s chars", duration_ms, len(response))

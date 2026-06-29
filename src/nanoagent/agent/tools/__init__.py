@@ -38,5 +38,11 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
     except ImportError:
         pass
 
+    try:
+        from nanoagent.agent.tools.introspection import harness_report
+        registry.register(harness_report)
+    except ImportError:
+        pass
+
 
 __all__ = ["register_builtin_tools"]

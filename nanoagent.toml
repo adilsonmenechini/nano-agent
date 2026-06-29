@@ -1,0 +1,33 @@
+# NanoAgent configuration file
+# ============================
+# This file is optional. Settings here are merged with environment variables.
+# Located at ~/.config/nanoagent/config.toml or ./nanoagent.toml (project-local).
+
+[agent]
+default_provider = "openai"
+project_path = "/home/user/projects/my-project"
+
+[tools]
+  # Permissions control which tools the LLM may invoke and under what rules.
+  [tools.permissions]
+  max_output_chars = 10_240  # Truncate tool output beyond this many chars
+
+    # Rules are evaluated in order. First match wins.
+    # Built-in modes: "allow", "deny", "ask"
+    [[tools.permissions.rules]]
+    tool_name = "run_shell"
+    mode = "deny"              # Disallow arbitrary shell commands
+
+    [[tools.permissions.rules]]
+    tool_name = "write_file"
+    mode = "ask"               # Request human approval for file writes
+
+    [[tools.permissions.rules]]
+    tool_name = "glob_file"
+    pattern = "**/secrets/**"  # Deny access to files under secrets/
+    match_type = "glob"
+    mode = "deny"
+
+    [[tools.permissions.rules]]
+    tool_name = "*"             # Allow everything else
+    mode = "allow"

@@ -35,6 +35,7 @@ class SqliteSkillEntry:
     scope: str
     created: float
     updated: float
+    status: str = "active"
 
 
 class SQLiteMemoryStore:
@@ -166,6 +167,59 @@ class SQLiteMemoryStore:
                 status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'completed', 'cancelled')),
                 created REAL NOT NULL,
                 updated REAL NOT NULL
+            )
+        """)
+        # Add status column to skills table if not present (schema migration)
+        try:
+            self.conn.execute("ALTER TABLE skills ADD COLUMN status TEXT DEFAULT 'active'")
+        except sqlite3.OperationalError:
+            pass
+
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS reflection_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                turn_id TEXT NOT NULL UNIQUE,
+                task_description TEXT,
+                tool_calls TEXT NOT NULL DEFAULT '[]',
+                steps_taken INTEGER DEFAULT 0,
+                errors TEXT NOT NULL DEFAULT '[]',
+                outcome TEXT NOT NULL DEFAULT 'success' CHECK(outcome IN ('success','partial','failure','error')),
+                duration_ms INTEGER DEFAULT 0,
+                lessons TEXT NOT NULL DEFAULT '[]',
+                created REAL NOT NULL
+            )
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reflection_created
+            ON reflection_records(created)
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reflection_outcome
+            ON reflection_records(outcome)
+        """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS experience_patterns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trigger_context TEXT NOT NULL DEFAULT '{}',
+                tool_sequence TEXT NOT NULL DEFAULT '[]',
+                recommended_approach TEXT NOT NULL DEFAULT '',
+                success_count INTEGER DEFAULT 0,
+                failure_count INTEGER DEFAULT 0,
+                sample_size INTEGER DEFAULT 0,
+                first_observed REAL NOT NULL,
+                last_applied REAL NOT NULL,
+                is_active INTEGER DEFAULT 1
+            )
+        """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS evolution_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                skill_slug TEXT NOT NULL,
+                iteration INTEGER NOT NULL,
+                baseline_fitness REAL,
+                evolved_fitness REAL,
+                accepted INTEGER DEFAULT 0,
+                created REAL NOT NULL
             )
         """)
         self.conn.commit()
@@ -717,6 +771,7 @@ class SQLiteMemoryStore:
             description=row["description"],
             code=row["code"],
             scope=row["scope"],
+            status=row["status"] if "status" in row.keys() else "active",
             created=row["created"],
             updated=row["updated"],
         )
@@ -739,6 +794,7 @@ class SQLiteMemoryStore:
                 description=row["description"],
                 code=row["code"],
                 scope=row["scope"],
+                status=row["status"] if "status" in row.keys() else "active",
                 created=row["created"],
                 updated=row["updated"],
             )

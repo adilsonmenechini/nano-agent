@@ -14,6 +14,9 @@ from nanoagent.memory.sqlite_memory_store import SQLiteMemoryStore
 from nanoagent.skills.skill_storage import SkillStorage
 from nanoagent.llm.base import StreamEvent
 from nanoagent.agent.errors import ProviderRetryableError
+from nanoagent.permissions import PermissionManager
+from nanoagent.truncation import OutputTruncator
+from nanoagent.agent.logging import AgentLogger
 
 
 class AgentState(Enum):
@@ -122,6 +125,7 @@ class Agent:
         self.on_paused: Any = None
         self.on_cancelled: Any = None
         self.on_loop_detected: Any = None
+        self.on_turn_complete: Any = None
 
         from nanoagent.config import AgentConfig
 
@@ -135,6 +139,18 @@ class Agent:
         self.retry_attempts = config.retry_attempts
         self.stream_enabled = config.stream
         self._config_providers = dict(config.providers) if config.providers else {}
+
+        # Register built-in tools and wire permissions + truncation
+        permissions_config = getattr(config, "permissions_config", {})
+        max_output_chars = getattr(config, "max_output_chars", 10_240)
+
+        pm = PermissionManager.load_from_config(permissions_config)
+        trunc = OutputTruncator(max_chars=max_output_chars)
+
+        from nanoagent.agent.tools import register_builtin_tools
+
+        self._tools = ToolRegistry(permission_manager=pm, output_truncator=trunc)
+        register_builtin_tools(self._tools)
 
         # Auto-load skills from DB
         try:
@@ -204,7 +220,14 @@ class Agent:
             self._tools.register(tool_obj, name=name)
 
     def execute_tool(self, name: str, arguments: dict) -> str:
-        return self._tools.execute(name, arguments)
+        logger = AgentLogger.get()
+        logger.tool_call(name, arguments)
+        import time
+        start = time.monotonic()
+        result = self._tools.execute(name, arguments)
+        elapsed = time.monotonic() - start
+        logger.debug("TOOL %s done in %.3fs (%d chars)", name, elapsed, len(result))
+        return result
 
     def tool_schemas(self, provider: str = "openai") -> list[dict]:
         if provider == "anthropic":
@@ -363,6 +386,9 @@ class Agent:
         self.loop_warning_count = 0
         self._prev_tool_sigs = None
         self.pause_event.set()
+
+        if self._state != AgentState.IDLE:
+            self._state = AgentState.IDLE
 
         if turn is not None:
             stop_reason = getattr(turn, "start", lambda p: None)(prompt)
@@ -561,6 +587,7 @@ class Agent:
                     self.background_review.on_turn_end(
                         turn_count=1, tool_calls=tc_count, messages=messages
                     )
+                self._fire_turn_complete(response.content or "", messages)
 
                 if session_id:
                     self.memory.save_session(
@@ -580,6 +607,7 @@ class Agent:
             self.background_review.on_turn_end(
                 turn_count=1, tool_calls=tc_count, messages=messages
             )
+        self._fire_turn_complete("Max iterations reached.", messages)
 
         if session_id:
             self.memory.save_session(
@@ -587,6 +615,25 @@ class Agent:
             )
 
         return "Max iterations reached.", messages
+
+    def _fire_turn_complete(self, response_text: str, messages: list[dict]) -> None:
+        if not self.on_turn_complete:
+            return
+        tool_results = []
+        errors = []
+        for msg in messages:
+            if msg.get("role") == "tool":
+                content = msg.get("content", "")
+                if content.startswith("Error:"):
+                    errors.append({"tool": msg.get("name", ""), "error": content})
+                tool_results.append(msg)
+        self.on_turn_complete(
+            response=response_text,
+            messages=messages,
+            tool_results=tool_results,
+            errors=errors,
+            duration_ms=0,
+        )
 
     def run_stream(
         self,
@@ -607,6 +654,9 @@ class Agent:
         self.loop_warning_count = 0
         self._prev_tool_sigs = None
         self.pause_event.set()
+
+        if self._state != AgentState.IDLE:
+            self._state = AgentState.IDLE
 
         if session_id:
             stored = self.memory.load_session(session_id)

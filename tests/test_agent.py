@@ -29,7 +29,15 @@ def agent():
 
 
 def test_agent_initialization(agent):
-    assert agent.tools == {}
+    assert len(agent.tools) >= 8
+    assert "run_shell" in agent.tools
+    assert "read_file" in agent.tools
+    assert "write_file" in agent.tools
+    assert "glob_file" in agent.tools
+    assert "grep_file" in agent.tools
+    assert "git_status" in agent.tools
+    assert "git_diff" in agent.tools
+    assert "git_log" in agent.tools
     assert agent.skills == {}
     assert agent.project_path is None
 

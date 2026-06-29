@@ -22,6 +22,9 @@ from .llm.openai import OpenAIProvider
 from .mcp import MCPManager
 from .memory.correction_detector import is_correction
 from .memory.session_flush import SessionFlush
+from .learning.reflector import Reflector
+from .introspection import HarnessAnalyzer
+from .memory.sqlite_memory_store import SQLiteMemoryStore
 from .skills.loader import SkillsLoader
 from .tool import Tool
 
@@ -914,6 +917,224 @@ def chat(provider, project_path, diagnostics, health):
                 rendered = diagnostics_collector.render()
                 if rendered:
                     console.print(rendered)
+
+
+# ─── Skill CLI ─────────────────────────────────────────────────────────
+
+
+@cli.group()
+def skill():
+    """Manage agent skills."""
+
+
+@skill.command("list-proposals")
+def skill_list_proposals():
+    """List proposed skills awaiting approval."""
+    store = SQLiteMemoryStore()
+    from nanoagent.skills.skill_storage import SkillStorage
+    ss = SkillStorage(store=store)
+    proposals = ss.list_proposed_skills()
+    if not proposals:
+        console.print("[yellow]No proposed skills.[/yellow]")
+        return
+    table = Table(title=f"Proposed Skills ({len(proposals)})")
+    table.add_column("Slug")
+    table.add_column("Name")
+    table.add_column("Description")
+    for p in proposals:
+        table.add_row(p["slug"], p["name"], p["description"][:60])
+    console.print(table)
+
+
+@skill.command("accept")
+@click.argument("slug")
+def skill_accept(slug):
+    """Accept a proposed skill and make it active."""
+    store = SQLiteMemoryStore()
+    from nanoagent.skills.skill_storage import SkillStorage
+    ss = SkillStorage(store=store)
+    if ss.activate_skill(slug):
+        console.print(f"[green]Skill '{slug}' activated.[/green]")
+    else:
+        console.print(f"[red]Skill '{slug}' not found or already active.[/red]")
+
+
+@skill.command("reject")
+@click.argument("slug")
+def skill_reject(slug):
+    """Reject a proposed skill."""
+    store = SQLiteMemoryStore()
+    from nanoagent.skills.skill_storage import SkillStorage
+    ss = SkillStorage(store=store)
+    if ss.reject_skill(slug):
+        console.print(f"[yellow]Skill '{slug}' rejected.[/yellow]")
+    else:
+        console.print(f"[red]Skill '{slug}' not found.[/red]")
+
+
+@skill.command("evolve")
+@click.argument("slug")
+@click.option("--iterations", default=5, help="Number of evolution iterations")
+@click.option("--eval-source", default="synthetic", help="synthetic or reflection_records")
+def skill_evolve(slug, iterations, eval_source):
+    """Evolve a skill using DSPy-style optimization."""
+    store = SQLiteMemoryStore()
+    from nanoagent.evolution.pipeline import EvolutionPipeline
+    from nanoagent.evolution.config import EvolutionConfig
+    config = EvolutionConfig(iterations=iterations, eval_source=eval_source)
+    pipeline = EvolutionPipeline(store=store, config=config)
+    console.print(f"[bold]Evolving skill '{slug}'...[/bold]")
+    result = pipeline.evolve(slug, iterations=iterations)
+    if not result.get("success"):
+        console.print(f"[red]Evolution failed: {result.get('error', 'unknown error')}[/red]")
+        return
+    baseline = result.get("baseline", {})
+    best = result.get("best_fitness", {})
+    console.print(f"[bold]Baseline fitness:[/bold] {baseline.get('fitness_score', 0):.3f}")
+    console.print(f"[bold]Evolved fitness:[/bold] {best.get('fitness_score', 0):.3f}")
+    improved = result.get("improved", False)
+    if improved:
+        console.print("[green]✓ Evolution improved the skill![/green]")
+        if click.confirm("Accept the evolved variant?"):
+            evolved_code = result.get("best_variant", "")
+            if pipeline.accept_evolution(slug, evolved_code):
+                console.print(f"[green]Skill '{slug}' updated with evolved version.[/green]")
+            else:
+                console.print("[red]Failed to update skill.[/red]")
+    else:
+        console.print("[yellow]Evolution did not improve baseline. Keeping current version.[/yellow]")
+
+
+# ─── Harness CLI ───────────────────────────────────────────────────────
+
+
+@cli.group()
+def harness():
+    """Introspect agent configuration and state."""
+
+
+@harness.command("report")
+def harness_report():
+    """Generate full harness introspection report."""
+    config = AgentConfig()
+    store = SQLiteMemoryStore()
+    analyzer = HarnessAnalyzer(config=config, memory_store=store)
+    console.print(analyzer.report())
+
+
+@harness.command("analyze")
+def harness_analyze():
+    """Analyze harness for optimization recommendations."""
+    config = AgentConfig()
+    store = SQLiteMemoryStore()
+    analyzer = HarnessAnalyzer(config=config, memory_store=store)
+    recs = analyzer.analyze()
+    if not recs:
+        console.print("[green]No recommendations — harness looks healthy.[/green]")
+        return
+    console.print("[bold]Optimization Recommendations:[/bold]")
+    for r in recs:
+        severity_color = {"high": "red", "medium": "yellow", "low": "dim"}.get(r["severity"], "white")
+        console.print(f"  [{severity_color}][{r['severity'].upper()}][/] {r['type']}")
+        console.print(f"       {r['message']} (confidence: {r['confidence']:.0%})")
+
+
+# ─── Reflection CLI ────────────────────────────────────────────────────
+
+
+@cli.group()
+def reflection():
+    """Inspect agent reflections."""
+
+
+@reflection.command("list")
+@click.option("--limit", default=10, help="Number of reflections to show")
+def reflection_list(limit):
+    """Show recent reflections."""
+    store = SQLiteMemoryStore()
+    reflector = Reflector(store)
+    records = reflector.get_recent(limit=limit)
+    if not records:
+        console.print("[yellow]No reflections found.[/yellow]")
+        return
+    table = Table(title=f"Recent Reflections (last {len(records)})")
+    table.add_column("Turn ID", style="dim")
+    table.add_column("Task")
+    table.add_column("Outcome")
+    table.add_column("Steps")
+    table.add_column("Duration")
+    for r in records:
+        table.add_row(
+            r["turn_id"][:8],
+            r["task_description"][:50],
+            r["outcome"],
+            str(r["steps_taken"]),
+            f"{r['duration_ms']}ms",
+        )
+    console.print(table)
+
+
+@reflection.command("show")
+@click.argument("turn_id")
+def reflection_show(turn_id):
+    """Show a specific reflection."""
+    store = SQLiteMemoryStore()
+    reflector = Reflector(store)
+    record = reflector.get_by_turn_id(turn_id)
+    if not record:
+        console.print(f"[red]Reflection not found: {turn_id}[/red]")
+        return
+    console.print(f"[bold]Turn ID:[/bold] {record['turn_id']}")
+    console.print(f"[bold]Task:[/bold] {record['task_description']}")
+    console.print(f"[bold]Outcome:[/bold] {record['outcome']}")
+    console.print(f"[bold]Steps:[/bold] {record['steps_taken']}")
+    console.print(f"[bold]Duration:[/bold] {record['duration_ms']}ms")
+    errors_raw = record.get("errors", "[]")
+    if errors_raw and errors_raw != "[]":
+        import json as _json
+        errors = _json.loads(errors_raw) if isinstance(errors_raw, str) else errors_raw
+        if errors:
+            console.print("[red]Errors:[/red]")
+            for e in errors:
+                console.print(f"  - {e}")
+    lessons_raw = record.get("lessons", "[]")
+    if lessons_raw and lessons_raw != "[]":
+        import json as _json
+        lessons = _json.loads(lessons_raw) if isinstance(lessons_raw, str) else lessons_raw
+        if lessons:
+            console.print("[bold]Lessons:[/bold]")
+            for lesson in lessons:
+                console.print(f"  - {lesson}")
+
+
+@reflection.command("search")
+@click.argument("query")
+@click.option("--limit", default=10)
+def reflection_search(query, limit):
+    """Search reflections by keyword."""
+    store = SQLiteMemoryStore()
+    reflector = Reflector(store)
+    records = reflector.search(query, limit=limit)
+    if not records:
+        console.print(f"[yellow]No reflections matching '{query}'[/yellow]")
+        return
+    console.print(f"[bold]Found {len(records)} reflection(s):[/bold]")
+    for r in records:
+        console.print(f"  {r['turn_id'][:8]} — {r['task_description'][:60]} [{r['outcome']}]")
+
+
+@reflection.command("stats")
+def reflection_stats():
+    """Show reflection statistics."""
+    store = SQLiteMemoryStore()
+    reflector = Reflector(store)
+    stats = reflector.get_stats()
+    console.print("[bold]Reflection Statistics[/bold]")
+    console.print(f"  Total turns: {stats.get('total', 0)}")
+    console.print(f"  Success: {stats.get('success_count', 0)}")
+    console.print(f"  Failures: {stats.get('failure_count', 0)}")
+    console.print(f"  Errors: {stats.get('error_count', 0)}")
+    console.print(f"  Avg duration: {stats.get('avg_duration_ms', 0):.0f}ms")
 
 
 if __name__ == "__main__":

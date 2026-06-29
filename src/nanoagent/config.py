@@ -99,6 +99,10 @@ class AgentConfig:
             or _get_toml_str(toml, "agent", "project_path")
             or None
         )
+        self.permissions_config = toml.get("tools", {}).get("permissions", {}) if isinstance(toml.get("tools"), dict) else {}
+        self.max_output_chars = _get_toml_int(
+            toml, "tools", "permissions", "max_output_chars", default=10_240
+        )
         self.review_enabled = (
             os.getenv("MEMORY_REVIEW_ENABLED", str(
                 _get_toml_bool(toml, "agent", "review_enabled", default=True)

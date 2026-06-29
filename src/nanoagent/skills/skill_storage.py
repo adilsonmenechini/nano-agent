@@ -46,6 +46,7 @@ class SkillStorage:
             "code": entry.code,
             "slug": entry.slug,
             "scope": entry.scope,
+            "status": getattr(entry, "status", "active"),
             "created_at": entry.created,
             "updated_at": entry.updated,
         }
@@ -61,6 +62,7 @@ class SkillStorage:
                 "code": e.code,
                 "slug": e.slug,
                 "scope": e.scope,
+                "status": getattr(e, "status", "active"),
                 "created_at": e.created,
                 "updated_at": e.updated,
             }
@@ -83,9 +85,8 @@ class SkillStorage:
         import time
         now = time.time()
         self._save_version(entry.id, old_code, old_desc)
-        project_id: str | None = None
         if scope == "project" and project_path:
-            project_id = self._store._get_project_id(project_path)
+            self._store._get_project_id(project_path)
         where, params = self._store._project_filter(scope, project_path)
         where = where.replace("project", "project_id")
         self._store.conn.execute(
@@ -154,6 +155,29 @@ class SkillStorage:
             project_path=project_path,
         )
         return True
+
+    def activate_skill(self, slug: str, scope: str = "global", project_path: str | None = None) -> bool:
+        where, params = self._store._project_filter(scope, project_path)
+        where = where.replace("project", "project_id")
+        cursor = self._store.conn.execute(
+            f"UPDATE skills SET status = 'active' WHERE slug = ? AND scope = ? AND {where}",
+            [slug, scope] + params,
+        )
+        self._store.conn.commit()
+        return cursor.rowcount > 0
+
+    def reject_skill(self, slug: str, scope: str = "global", project_path: str | None = None) -> bool:
+        where, params = self._store._project_filter(scope, project_path)
+        where = where.replace("project", "project_id")
+        cursor = self._store.conn.execute(
+            f"UPDATE skills SET status = 'rejected' WHERE slug = ? AND scope = ? AND {where}",
+            [slug, scope] + params,
+        )
+        self._store.conn.commit()
+        return cursor.rowcount > 0
+
+    def list_proposed_skills(self) -> list[dict]:
+        return [s for s in self.list_skills() if s.get("status") == "proposed"]
 
     def delete_skill(
         self, slug: str, scope: str = "global", project_path: str | None = None
