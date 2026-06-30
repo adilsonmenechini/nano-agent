@@ -9,9 +9,9 @@ from .base import BaseLLMProvider, LLMResponse, ToolCall
 
 
 class OpenAIProvider(BaseLLMProvider):
-    def __init__(self, api_key: str, base_url: str, model: str):
-        super().__init__(api_key, base_url, model)
-        self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+    def __init__(self, api_key: str, base_url: str, model: str, timeout: float = 120.0):
+        super().__init__(api_key, base_url, model, timeout)
+        self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=timeout)
 
     def _chat(
         self,
@@ -28,6 +28,8 @@ class OpenAIProvider(BaseLLMProvider):
         params = dict(model=self.model, messages=full, **kwargs)
         if tools:
             params["tools"] = tools
+        if self.timeout is not None:
+            params["timeout"] = self.timeout
 
         try:
             response = self.client.chat.completions.create(**params)
@@ -55,7 +57,7 @@ class OpenAIProvider(BaseLLMProvider):
             },
         )
 
-    def _chat_stream(
+def _chat_stream(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
@@ -72,6 +74,8 @@ class OpenAIProvider(BaseLLMProvider):
         params = dict(model=self.model, messages=full, stream=True, **kwargs)
         if tools:
             params["tools"] = tools
+        if self.timeout is not None:
+            params["timeout"] = self.timeout
 
         try:
             stream = self.client.chat.completions.create(**params)
@@ -82,11 +86,18 @@ class OpenAIProvider(BaseLLMProvider):
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta and delta.content:
                 yield StreamEvent(type="content", delta=delta.content)
-            if delta and delta.tool_calls:
+            elif delta and getattr(delta, "tool_calls", None):
                 for tc in delta.tool_calls:
-                    yield StreamEvent(
-                        type="tool_call",
-                        delta={"id": tc.id, "function": tc.function},
-                    )
-
-        yield StreamEvent(type="done")
+                    if tc.function and tc.function.name:
+                        args = {}
+                        if tc.function.arguments:
+                            try:
+                                args = json.loads(tc.function.arguments)
+                            except json.JSONDecodeError:
+                                args = {}
+                        yield StreamEvent(
+                            type="tool_call",
+                            delta={"id": tc.index, "name": tc.function.name, "arguments": args},
+                        )
+            elif chunk.choices and chunk.choices[0].finish_reason is not None:
+                yield StreamEvent(type="done")

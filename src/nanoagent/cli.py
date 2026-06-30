@@ -782,6 +782,8 @@ def chat(provider, project_path, diagnostics, health):
 
     _print_welcome()
 
+    _first_ctrl_c = False
+
     _repl_completer = None
     try:
         from prompt_toolkit import PromptSession
@@ -823,10 +825,21 @@ def chat(provider, project_path, diagnostics, health):
                 raw = console.input(f"[bold green]you[/bold green]{prompt_suffix} [dim]›[/dim] ").strip()
         except (EOFError, KeyboardInterrupt):
             console.print()
-            if session_id and messages:
-                agent.memory.save_session(session_id, messages, status="completed")
-            _maybe_flush(messages, agent)
-            break
+            job = _job_manager.latest()
+            if _first_ctrl_c:
+                # Second Ctrl+C - exit completely
+                if session_id and messages:
+                    agent.memory.save_session(session_id, messages, status="completed")
+                _maybe_flush(messages, agent)
+                break
+            else:
+                _first_ctrl_c = True
+                if job and hasattr(job, 'status') and job.status in ("running", "paused"):
+                    console.print("[yellow]Cancelling operation...[/yellow]")
+                    _handle_cancel(_job_manager)
+                else:
+                    console.print("[dim]Press Ctrl+C again to exit.[/dim]")
+                continue
 
         if raw in ("exit", "quit", "/exit", "/quit"):
             if session_id and messages:
@@ -1135,6 +1148,16 @@ def reflection_stats():
     console.print(f"  Failures: {stats.get('failure_count', 0)}")
     console.print(f"  Errors: {stats.get('error_count', 0)}")
     console.print(f"  Avg duration: {stats.get('avg_duration_ms', 0):.0f}ms")
+
+
+@cli.command()
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host")
+@click.option("--port", default=8080, show_default=True, type=int, help="Bind port")
+def web(host, port):
+    """Start the NanoAgent Web UI server."""
+    from .web.server import create_app, run_server
+    app = create_app(host=host, port=port)
+    run_server(app, host=host, port=port)
 
 
 if __name__ == "__main__":

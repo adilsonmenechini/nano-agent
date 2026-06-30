@@ -148,3 +148,40 @@ def test_health_command():
     result = runner.invoke(cli, ["health"])
     # Exit 0 — providers may show error (no API keys), but the command itself runs
     assert result.exit_code == 0
+
+
+def test_get_agent_passes_timeout():
+    from nanoagent.web.handlers import _get_agent
+    import unittest.mock
+
+    # Clear cached agent
+    import nanoagent.web.handlers as handlers_module
+    handlers_module._agent_instance = None
+
+    with unittest.mock.patch('nanoagent.web.handlers.AgentConfig') as mock_config_class, \
+         unittest.mock.patch('nanoagent.web.handlers.OpenAIProvider') as mock_openai:
+        # Setup mock config
+        mock_config = unittest.mock.MagicMock()
+        mock_config.default_provider = 'openai'
+        mock_config.get_provider_config.return_value = unittest.mock.MagicMock(
+            api_key='test-key',
+            base_url='http://test.url',
+            model='test-model'
+        )
+        mock_config.loop.llm_timeout_seconds = 120.0
+        mock_config_class.return_value = mock_config
+
+        mock_openai.return_value = unittest.mock.MagicMock()
+
+        # Call _get_agent
+        agent = _get_agent()
+
+        # Verify OpenAIProvider called with timeout
+        mock_openai.assert_called_once()
+        args, kwargs = mock_openai.call_args
+        # Check that timeout keyword argument is present and equals 120.0
+        assert 'timeout' in kwargs
+        assert kwargs['timeout'] == 120.0
+
+        # Also verify Agent was created with that provider
+        assert agent is not None

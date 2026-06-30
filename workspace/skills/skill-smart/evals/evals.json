@@ -1,0 +1,35 @@
+{
+  "skill_name": "skill-smart",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "O que é a metodologia SMART?",
+      "expected_output": "Deve explicar o acrônimo (Específico, Mensurável, Alcanjável, Realista, Temporal) e seus 5 critérios",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Como aplicar a metodologia SMART para definir uma meta de carreira?",
+      "expected_output": "Deve fornecer os 5 passos apply a metodologia com exemplo prático de meta de carreira",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Qual a diferença entre Alcanjável e Realista na metodologia SMART?",
+      "expected_output": "Deve explicar que Alcanjável é sobre viabilidade prática e Realista é sobre relevância e recursos disponíveis",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Me ajuda a transformar 'Quero aprender inglês' em uma meta SMART",
+      "expected_output": "Deve converter a meta vaga em meta SMART com todos os 5 critérios aplicados",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Não entendi bem o conceito de meta mensurável, pode explicar melhor?",
+      "expected_output": "Deve explicar com exemplos e AO FINAL verificar se a dúvida foi esclarecida",
+      "files": []
+    }
+  ]
+}

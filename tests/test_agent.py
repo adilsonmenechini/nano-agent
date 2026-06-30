@@ -2,6 +2,7 @@ import pytest
 import tempfile
 import os
 from nanoagent.agent import Agent
+from nanoagent.config import AgentConfig
 from nanoagent.agent.errors import (
     AgentError,
     ProviderError,
@@ -502,3 +503,44 @@ def test_parallel_tool_execution():
     tool_messages = [m for m in messages if m.get("role") == "tool"]
     assert len(tool_messages) == 2
     agent.memory.close()
+
+def test_agent_loop_config():
+    agent = Agent(db_path=":memory:")
+    assert hasattr(agent, 'loop_config')
+    assert agent.loop_config is not None
+    assert agent.loop_config.llm_timeout_seconds == 120.0
+    assert agent.loop_config.tool_timeout_seconds == 30.0
+    agent.memory.close()
+
+def test_agent_loop_config_from_toml():
+    import tempfile
+    import os
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
+        f.write('''
+[agent]
+default_provider = "openai"
+project_path = "/tmp"
+
+[agent.loop]
+llm_timeout_seconds = 90
+tool_timeout_seconds = 20
+
+[tools.permissions]
+max_output_chars = 5000
+
+[[tools.permissions.rules]]
+tool_name = "run_shell"
+mode = "deny"
+
+[[tools.permissions.rules]]
+tool_name = "*"
+mode = "allow"
+''')
+        temp_path = f.name
+    try:
+        agent = Agent(db_path=":memory:", config_path=temp_path)
+        assert agent.loop_config.llm_timeout_seconds == 90
+        assert agent.loop_config.tool_timeout_seconds == 20
+        agent.memory.close()
+    finally:
+        os.unlink(temp_path)

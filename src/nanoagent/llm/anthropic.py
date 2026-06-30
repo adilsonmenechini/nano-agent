@@ -8,11 +8,12 @@ from .base import BaseLLMProvider, LLMResponse, ToolCall
 
 
 class AnthropicProvider(BaseLLMProvider):
-    def __init__(self, api_key: str, base_url: str, model: str):
-        super().__init__(api_key, base_url, model)
+    def __init__(self, api_key: str, base_url: str, model: str, timeout: float = 120.0):
+        super().__init__(api_key, base_url, model, timeout)
         self.client = anthropic.Anthropic(
             api_key=self.api_key,
             base_url=self.base_url or None,
+            timeout=timeout,
         )
 
     def _chat(

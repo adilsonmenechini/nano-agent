@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
@@ -17,6 +19,10 @@ from nanoagent.agent.errors import ProviderRetryableError
 from nanoagent.permissions import PermissionManager
 from nanoagent.truncation import OutputTruncator
 from nanoagent.agent.logging import AgentLogger
+from nanoagent.agent.errors import AgentError
+
+# ── Logger ──────────────────────────────────────────────────────────────────
+agent_logger = AgentLogger("nanoagent.agent")
 
 
 class AgentState(Enum):
@@ -138,6 +144,7 @@ class Agent:
         self.temperature = config.temperature
         self.retry_attempts = config.retry_attempts
         self.stream_enabled = config.stream
+        self.loop_config = config.loop
         self._config_providers = dict(config.providers) if config.providers else {}
 
         # Register built-in tools and wire permissions + truncation
@@ -741,13 +748,71 @@ class Agent:
                 self._transition(AgentState.EXECUTING_TOOLS, "tool calls from stream")
                 from nanoagent.llm.base import ToolCall as TCall
 
+                def _safe_name(val: Any) -> str:
+                    return val if val else ""
+
+                def _extract_tc_name(tc: dict) -> str:
+                    name = tc.get("name")
+                    if name:
+                        return name
+                    func = tc.get("function")
+                    if func is None:
+                        return ""
+                    if isinstance(func, dict):
+                        return _safe_name(func.get("name"))
+                    return _safe_name(getattr(func, "name", None))
+
+                def _extract_tc_args(tc: dict) -> dict:
+                    args = tc.get("arguments")
+                    if args:
+                        if isinstance(args, dict):
+                            return args
+                        return {}
+                    inp = tc.get("input")
+                    if inp and isinstance(inp, dict):
+                        return inp
+                    return {}
+
+                def _try_parse_json(raw: str) -> dict:
+                    try:
+                        return json.loads(raw) if raw.strip() else {}
+                    except (json.JSONDecodeError, ValueError):
+                        return {}
+
+                # Accumulate streaming tool call deltas by id: a single logical
+                # tool call can span multiple stream chunks. Merge partial args.
+                merged: dict[str, dict[str, Any]] = {}
+                last_tid: str = ""
+                for tc in _tool_calls_data:
+                    tid = tc.get("id") or ""
+                    if tid:
+                        last_tid = tid
+                    else:
+                        tid = last_tid
+                    if not tid:
+                        continue
+                    if tid not in merged:
+                        merged[tid] = {"id": tid, "name": "", "arguments": ""}
+                    name = _extract_tc_name(tc)
+                    if name:
+                        merged[tid]["name"] = name
+                    func = tc.get("function")
+                    if func is not None:
+                        raw_args = ""
+                        if isinstance(func, dict):
+                            raw_args = func.get("arguments") or ""
+                        else:
+                            raw_args = getattr(func, "arguments", "") or ""
+                        merged[tid]["arguments"] += raw_args
+
                 tool_calls = [
                     TCall(
-                        id=tc.get("id", ""),
-                        name=tc.get("name", tc.get("function", {}).get("name", "")),
-                        arguments=tc.get("arguments", tc.get("input", {})),
+                        id=v["id"],
+                        name=v["name"] or "unknown",
+                        arguments=_try_parse_json(v["arguments"]),
                     )
-                    for tc in _tool_calls_data
+                    for v in merged.values()
+                    if v["name"]
                 ]
 
                 current_sigs = sorted(
@@ -796,6 +861,10 @@ class Agent:
             else:
                 self._transition(AgentState.IDLE, "response ready")
                 messages.append({"role": "assistant", "content": content})
+                if session_id:
+                    self.memory.save_session(
+                        session_id, messages, project=self.project_path, status="active"
+                    )
                 yield StreamEvent(type="done")
                 return
 

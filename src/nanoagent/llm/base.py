@@ -26,10 +26,11 @@ class StreamEvent:
 
 
 class BaseLLMProvider(ABC):
-    def __init__(self, api_key: str, base_url: str, model: str):
+    def __init__(self, api_key: str, base_url: str, model: str, timeout: float = 120.0):
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
+        self.timeout = timeout
 
     def generate(self, prompt: str, **kwargs) -> str:
         result = self.chat(messages=[{"role": "user", "content": prompt}], **kwargs)
@@ -68,7 +69,9 @@ class BaseLLMProvider(ABC):
         **kwargs,
     ) -> LLMResponse | Generator[StreamEvent, None, None]:
         if stream:
-            return self._chat_stream(messages, tools=tools, system_prompt=system_prompt, **kwargs)
+            return self._chat_stream(
+                messages, tools=tools, system_prompt=system_prompt, **kwargs
+            )
         return self._chat(messages, tools=tools, system_prompt=system_prompt, **kwargs)
 
     @abstractmethod
@@ -93,5 +96,8 @@ class BaseLLMProvider(ABC):
         yield StreamEvent(type="content", delta=result.content or "")
         if result.tool_calls:
             for tc in result.tool_calls:
-                yield StreamEvent(type="tool_call", delta={"id": tc.id, "name": tc.name, "arguments": tc.arguments})
+                yield StreamEvent(
+                    type="tool_call",
+                    delta={"id": tc.id, "name": tc.name, "arguments": tc.arguments},
+                )
         yield StreamEvent(type="done")
