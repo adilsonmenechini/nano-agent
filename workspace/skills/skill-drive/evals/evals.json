@@ -1,0 +1,35 @@
+{
+  "skill_name": "skill-drive",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "O que é a metodologia DRIVE para melhoria de processos?",
+      "expected_output": "Deve explicar os 5 passos (Define, Review, Identify, Verify, Execute) e seu uso para melhoria de processos",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Qual a diferença entre os passos Review e Verify na metodologia DRIVE?",
+      "expected_output": "Deve explicar que Review é sobre analisar a situação atual e Verify é sobre validar se as soluções Proposed atendem aos critérios",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Me ajude a aplicar a metodologia DRIVE para melhorar o processo de contratação de funcionários",
+      "expected_output": "Deve guiar pelos 5 passos com exemplo prático para processo de contratação",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Não entendi bem o passo Identify, pode explicar melhor?",
+      "expected_output": "Deve explicar o passo Identify (identificar soluções e mudanças necessárias) com exemplos e AO FINAL verificar se a dúvida foi esclarecida",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Quando devo usar a metodologia DRIVE?",
+      "expected_output": "Deve explicar quando DRIVE é aplicável (melhoria de processos, resolução de problemas organizacionais) e AO FINAL verificar dúvidas",
+      "files": []
+    }
+  ]
+}

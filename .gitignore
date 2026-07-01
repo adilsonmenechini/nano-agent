@@ -14,3 +14,11 @@ dist/
 .sisyphus
 */memory/*
 */todo.json
+*.log
+*.tmp
+*.swp
+.vscode/
+.idea/
+coverage/
+.coverage
+htmlcov/

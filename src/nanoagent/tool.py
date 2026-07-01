@@ -101,8 +101,6 @@ def infer_parameters_schema(fn: Callable) -> dict:
             prop["default"] = (
                 param.default if param.default is not inspect.Parameter.empty else None
             )
-        if param.description:
-            prop["description"] = param.description
         properties[name] = prop
 
     return {"type": "object", "properties": properties, "required": required}

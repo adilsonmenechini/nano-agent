@@ -12,9 +12,13 @@ import click
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
+from typing import Any
 
 from .agent import Agent
 from .config import AgentConfig
+from .workspace.loader import WorkspaceLoader
+from .workspace.router import InputRouter, Route
+from .workspace.executor import WorkflowExecutor
 from .llm.anthropic import AnthropicProvider
 from .llm.base import BaseLLMProvider
 from .llm.lmstudio import LMStudioProvider
@@ -22,6 +26,9 @@ from .llm.openai import OpenAIProvider
 from .mcp import MCPManager
 from .memory.correction_detector import is_correction
 from .memory.session_flush import SessionFlush
+from .learning.reflector import Reflector
+from .introspection import HarnessAnalyzer
+from .memory.sqlite_memory_store import SQLiteMemoryStore
 from .skills.loader import SkillsLoader
 from .tool import Tool
 
@@ -213,6 +220,31 @@ def _run_consolidation(agent: Agent, target: str) -> None:
         pass
 
 
+def _check_config(output_json: bool = False) -> None:
+    """Print current config sources and values."""
+    import json as _json
+
+    config = AgentConfig()
+    info = {
+        "default_provider": config.default_provider,
+        "project_path": config.project_path,
+        "max_tokens": config.max_tokens,
+        "temperature": config.temperature,
+        "retry_attempts": config.retry_attempts,
+        "stream": config.stream,
+        "review_enabled": config.review_enabled,
+        "providers": {
+            k: {"model": v.model, "base_url": v.base_url}
+            for k, v in config.providers.items()
+        },
+    }
+    if output_json:
+        click.echo(_json.dumps(info, indent=2))
+    else:
+        for k, v in info.items():
+            click.echo(f"{k}: {v}")
+
+
 def _make_agent(provider_name: str | None, project_path: str | None) -> Agent:
     config = AgentConfig()
     project_path = project_path or config.project_path
@@ -250,6 +282,9 @@ def _make_agent(provider_name: str | None, project_path: str | None) -> Agent:
                 code="",
             )
 
+    # Load workspace agents and commands
+    agent._workspace_loader, agent._workspace_router = _load_workspace(project_path)
+
     return agent
 
 
@@ -282,12 +317,11 @@ def _print_full_help() -> None:
         ("/pause", "Pause the running agent job"),
         ("/resume", "Resume a paused agent job"),
         ("/cancel", "Cancel the running agent job"),
-        ("/memory-insights", "Show memory stats"),
-        ("/memory-search <q>", "FTS5 search across memories"),
-        ("/memory-forget <key>", "Remove memory by key"),
-        ("/memory-forget --all", "Remove all memories"),
-        ("/memory-forget --target <t>", "Remove all memories for a target"),
-        ("/memory-consolidate", "Dedup and consolidate memories"),
+        ("/memory <subcommand>", "Memory: search, insights, consolidate, forget"),
+        ("/agents", "List available workspace agents"),
+        ("/commands", "List available workspace commands"),
+        ("@agent <prompt>", "Use a specialized agent"),
+        ("/cmd <args>", "Run a command workflow"),
         ("!<cmd>", "Run a shell command"),
         ("/exit", "Exit the chat"),
     ]
@@ -476,6 +510,138 @@ def _handle_memory_consolidate(agent: Agent) -> None:
         except Exception as e:
             console.print(f"[yellow]Consolidation failed for {target}: {e}[/yellow]")
     store.conn.commit()
+
+
+def _load_workspace(
+    project_path: str | None,
+) -> tuple[WorkspaceLoader | None, InputRouter | None]:
+    """Load workspace agents and commands, return loader and router."""
+    if not project_path:
+        return None, None
+    ws_path = Path(project_path)
+    if not (ws_path / "agents").is_dir() and not (ws_path / "commands").is_dir():
+        return None, None
+    try:
+        loader = WorkspaceLoader(ws_path)
+        router = InputRouter(loader)
+        agent_count = len(loader.agent_names())
+        cmd_count = len(loader.command_names())
+        if agent_count or cmd_count:
+            console.print(
+                f"[dim]Loaded {agent_count} agents, {cmd_count} commands from workspace/[/dim]"
+            )
+        return loader, router
+    except Exception as e:
+        console.print(f"[yellow]Workspace load skipped: {e}[/yellow]")
+        return None, None
+
+
+def _handle_agents(router: InputRouter | None) -> None:
+    """List available workspace agents."""
+    if not router:
+        console.print("[dim]No workspace agents loaded.[/dim]")
+        return
+    names = router.list_agents()
+    if not names:
+        console.print("[dim]No agents found in workspace/agents/[/dim]")
+        return
+    table = Table(title=f"Agents ({len(names)})", box=None)
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Description")
+    for name in names:
+        profile = router.get_agent(name)
+        desc = profile.description if profile else ""
+        table.add_row(f"@{name}", desc[:100])
+    console.print(table)
+
+
+def _handle_commands_list(router: InputRouter | None) -> None:
+    """List available workspace commands."""
+    if not router:
+        console.print("[dim]No workspace commands loaded.[/dim]")
+        return
+    names = router.list_commands()
+    if not names:
+        console.print("[dim]No commands found in workspace/commands/[/dim]")
+        return
+    table = Table(title=f"Commands ({len(names)})", box=None)
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Description")
+    for name in names:
+        wf = router.get_command(name)
+        desc = wf.description if wf else ""
+        usage = f"/{name}"
+        if wf and wf.arguments:
+            for a in wf.arguments:
+                usage += f" <{a.name}>" if a.required else f" [{a.name}]"
+        table.add_row(usage, desc[:100])
+    console.print(table)
+
+
+def _handle_agent_route(
+    route: Route,
+    agent: Agent,
+    system_prompt: str | None,
+    messages: list[dict],
+    session_id: str | None,
+) -> tuple[str, list[dict]]:
+    """Execute a prompt through a specialized agent from workspace."""
+    profile = route.agent
+    console.print(
+        f"[bold purple]@{profile.name}[/bold purple] [dim]›[/dim] {route.prompt[:80]}"
+    )
+
+    # Build agent-specific system prompt
+    base = system_prompt or ""
+    agent_prompt = profile.system_prompt
+    if agent_prompt:
+        agent_system = f"{base}\n\n{agent_prompt}" if base else agent_prompt
+    else:
+        agent_system = base
+
+    response, messages = _run_with_status(
+        agent,
+        route.prompt,
+        agent_system,
+        messages,
+        session_id=session_id,
+    )
+    return response, messages
+
+
+def _handle_command_route(
+    route: Route,
+    agent: Agent,
+) -> str:
+    """Execute a command workflow from workspace."""
+    workflow = route.command
+    console.print(
+        f"[bold yellow]/{workflow.name}[/bold yellow] [dim]›[/dim] Running workflow..."
+    )
+    executor = WorkflowExecutor(agent)
+
+    def on_start(name: str, desc: str) -> None:
+        console.print(f"  [dim]→ {name}[/dim]: {desc}")
+
+    def on_complete(name: str, result: Any) -> None:
+        status = "[green]ok[/green]" if result.success else "[red]fail[/red]"
+        console.print(f"  [{status}] {name} ({result.duration_ms:.0f}ms)")
+
+    result = executor.execute(
+        workflow,
+        route.command_args,
+        on_step_start=on_start,
+        on_step_complete=on_complete,
+    )
+
+    if result.success:
+        console.print(
+            f"[green]Workflow completed in {result.duration_ms:.0f}ms[/green]"
+        )
+    else:
+        console.print(f"[red]Workflow failed: {result.error}[/red]")
+
+    return result.output or "(workflow completed)"
 
 
 def _handle_shell(cmd: str) -> None:
@@ -673,36 +839,193 @@ def cli():
 
 
 @cli.command()
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def check_config(output_json):
+    """Show current configuration sources and values."""
+    _check_config(output_json=output_json)
+
+
+@cli.command()
+@click.option(
+    "--provider", "-pr", default=None, help="Provider to check (default: all)"
+)
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def health(provider, output_json):
+    """Check provider connectivity status."""
+    import json as _json
+
+    config = AgentConfig()
+    providers_to_check: list[tuple[str, type[BaseLLMProvider]]] = []
+    if provider and provider in _PROVIDER_FACTORY:
+        providers_to_check = [(provider, _PROVIDER_FACTORY[provider])]
+    elif provider:
+        click.echo(f"Unknown provider: {provider}")
+        return
+    else:
+        providers_to_check = list(_PROVIDER_FACTORY.items())
+
+    results: dict[str, str] = {}
+    for name, factory in providers_to_check:
+        try:
+            provider_config = config.providers.get(name)
+            if provider_config:
+                inst = factory(
+                    api_key=provider_config.api_key,
+                    base_url=provider_config.base_url,
+                    model=provider_config.model,
+                )
+            else:
+                inst = factory()
+            inst.chat(messages=[{"role": "user", "content": "ping"}], max_tokens=1)
+            results[name] = "connected"
+        except Exception as e:
+            results[name] = f"error: {e}"
+
+    if output_json:
+        click.echo(_json.dumps(results, indent=2))
+    else:
+        for name, status in results.items():
+            color = "green" if status == "connected" else "red"
+            click.echo(click.style(f"  {name}: {status}", fg=color))
+
+
+@cli.command()
 @click.option("--prompt", "-p", prompt="Enter your prompt")
 @click.option("--provider", "-pr", default=None)
 @click.option("--project-path", "-pp", default=None)
-def run(prompt, provider, project_path):
+@click.option("--diagnostics", is_flag=True, help="Show turn diagnostics")
+def run(prompt, provider, project_path, diagnostics):
     agent = _make_agent(provider, project_path)
     system_prompt = _build_system_prompt(agent.project_path)
+    diagnostics_collector = None
+    if diagnostics:
+        from nanoagent.loop.diagnostics import DiagnosticsCollector
+
+        diagnostics_collector = DiagnosticsCollector(enabled=True)
     response, _ = agent.run(prompt, system_prompt=system_prompt)
     click.echo(response)
+    if diagnostics and diagnostics_collector is not None:
+        rendered = diagnostics_collector.render()
+        if rendered:
+            console.print(rendered)
 
 
 @cli.command()
 @click.option("--provider", "-pr", default=None)
 @click.option("--project-path", "-pp", default=None)
-def chat(provider, project_path):
+@click.option("--diagnostics", is_flag=True, help="Show turn diagnostics")
+@click.option("--health", is_flag=True, help="Show health indicator in prompt")
+def chat(provider, project_path, diagnostics, health):
     agent = _make_agent(provider, project_path)
     system_prompt = _build_system_prompt(agent.project_path)
     messages: list[dict] = []
     session_id: str | None = str(uuid.uuid4())[:12]
 
+    diagnostics_collector = None
+    if diagnostics or health:
+        from nanoagent.loop.diagnostics import DiagnosticsCollector
+
+        diagnostics_collector = DiagnosticsCollector(enabled=diagnostics)
+
     _print_welcome()
+
+    _first_ctrl_c = False
+
+    _repl_completer = None
+    # Load workspace agents and commands for routing
+    _workspace_router = getattr(agent, "_workspace_router", None)
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import WordCompleter
+        from prompt_toolkit.formatted_text import HTML
+
+        _repl_words = [
+            "help",
+            "clear",
+            "history",
+            "tools",
+            "skills",
+            "jobs",
+            "pause",
+            "resume",
+            "cancel",
+            "memory",
+            "agents",
+            "commands",
+            "shell",
+            "exit",
+            "quit",
+        ]
+        if _workspace_router:
+            _repl_words.extend([f"@{name}" for name in _workspace_router.list_agents()])
+            _repl_words.extend(
+                [f"/{name}" for name in _workspace_router.list_commands()]
+            )
+        _repl_completer = WordCompleter(_repl_words, ignore_case=True)
+        _repl_session = PromptSession(completer=_repl_completer)
+        _use_pt = True
+    except ImportError:
+        _use_pt = False
 
     while True:
         try:
-            raw = console.input("[bold green]you[/bold green] [dim]›[/dim] ").strip()
+            if _use_pt and _repl_completer is not None:
+                prompt_text = (
+                    "<b><style fg='green'>you</style></b> <style fg='gray'>›</style> "
+                )
+                if health and diagnostics_collector is not None:
+                    report = diagnostics_collector.report()
+                    if report.health_snapshots:
+                        last = report.health_snapshots[-1]
+                        level = last.get("level", "healthy")
+                        color = (
+                            "green"
+                            if level == "healthy"
+                            else "yellow"
+                            if level == "warning"
+                            else "red"
+                        )
+                        prompt_text = f"<b><style fg='green'>you</style></b> <b><style fg='{color}'>{level[0]}</style></b> <style fg='gray'>›</style> "
+                raw = _repl_session.prompt(HTML(prompt_text)).strip()
+            else:
+                prompt_suffix = ""
+                if health and diagnostics_collector is not None:
+                    report = diagnostics_collector.report()
+                    if report.health_snapshots:
+                        last = report.health_snapshots[-1]
+                        level = last.get("level", "healthy")
+                        colors = {
+                            "healthy": "green",
+                            "warning": "yellow",
+                            "degraded": "yellow",
+                            "critical": "red",
+                        }
+                        color = colors.get(level, "green")
+                        prompt_suffix = f" [{color}]{level[0]}[/{color}]"
+                raw = console.input(
+                    f"[bold green]you[/bold green]{prompt_suffix} [dim]›[/dim] "
+                ).strip()
         except (EOFError, KeyboardInterrupt):
             console.print()
-            if session_id and messages:
-                agent.memory.save_session(session_id, messages, status="completed")
-            _maybe_flush(messages, agent)
-            break
+            job = _job_manager.latest()
+            if _first_ctrl_c:
+                # Second Ctrl+C - exit completely
+                if session_id and messages:
+                    agent.memory.save_session(session_id, messages, status="completed")
+                _maybe_flush(messages, agent)
+                break
+            else:
+                _first_ctrl_c = True
+                if (
+                    job
+                    and hasattr(job, "status")
+                    and job.status in ("running", "paused")
+                ):
+                    console.print("[yellow]Cancelling operation...[/yellow]")
+                    _handle_cancel(_job_manager)
+                else:
+                    console.print("[dim]Press Ctrl+C again to exit.[/dim]")
+                continue
 
         if raw in ("exit", "quit", "/exit", "/quit"):
             if session_id and messages:
@@ -764,6 +1087,32 @@ def chat(provider, project_path):
             )
         elif raw.startswith("!"):
             _handle_shell(raw[1:])
+        elif raw in ("/agents", "agents"):
+            _handle_agents(_workspace_router)
+        elif raw in ("/commands", "commands"):
+            _handle_commands_list(_workspace_router)
+        elif (
+            _workspace_router
+            and (route := _workspace_router.parse(raw))
+            and (route.is_agent or route.is_command)
+        ):
+            try:
+                if route.is_agent:
+                    response, messages = _handle_agent_route(
+                        route,
+                        agent,
+                        system_prompt,
+                        messages,
+                        session_id,
+                    )
+                elif route.is_command:
+                    response = _handle_command_route(route, agent)
+                    messages.append({"role": "assistant", "content": response})
+                if response:
+                    console.print("[bold purple]nano[/bold purple] [dim]›[/dim]")
+                    console.print(Markdown(response))
+            except Exception as e:
+                console.print(f"[red]{e}[/red]")
         else:
             if is_correction(raw):
                 try:
@@ -789,6 +1138,261 @@ def chat(provider, project_path):
             if response:
                 console.print("[bold purple]nano[/bold purple] [dim]›[/dim]")
                 console.print(Markdown(response))
+            if diagnostics and diagnostics_collector is not None:
+                rendered = diagnostics_collector.render()
+                if rendered:
+                    console.print(rendered)
+
+
+# ─── Skill CLI ─────────────────────────────────────────────────────────
+
+
+@cli.group()
+def skill():
+    """Manage agent skills."""
+
+
+@skill.command("list-proposals")
+def skill_list_proposals():
+    """List proposed skills awaiting approval."""
+    store = SQLiteMemoryStore()
+    from nanoagent.skills.skill_storage import SkillStorage
+
+    ss = SkillStorage(store=store)
+    proposals = ss.list_proposed_skills()
+    if not proposals:
+        console.print("[yellow]No proposed skills.[/yellow]")
+        return
+    table = Table(title=f"Proposed Skills ({len(proposals)})")
+    table.add_column("Slug")
+    table.add_column("Name")
+    table.add_column("Description")
+    for p in proposals:
+        table.add_row(p["slug"], p["name"], p["description"][:60])
+    console.print(table)
+
+
+@skill.command("accept")
+@click.argument("slug")
+def skill_accept(slug):
+    """Accept a proposed skill and make it active."""
+    store = SQLiteMemoryStore()
+    from nanoagent.skills.skill_storage import SkillStorage
+
+    ss = SkillStorage(store=store)
+    if ss.activate_skill(slug):
+        console.print(f"[green]Skill '{slug}' activated.[/green]")
+    else:
+        console.print(f"[red]Skill '{slug}' not found or already active.[/red]")
+
+
+@skill.command("reject")
+@click.argument("slug")
+def skill_reject(slug):
+    """Reject a proposed skill."""
+    store = SQLiteMemoryStore()
+    from nanoagent.skills.skill_storage import SkillStorage
+
+    ss = SkillStorage(store=store)
+    if ss.reject_skill(slug):
+        console.print(f"[yellow]Skill '{slug}' rejected.[/yellow]")
+    else:
+        console.print(f"[red]Skill '{slug}' not found.[/red]")
+
+
+@skill.command("evolve")
+@click.argument("slug")
+@click.option("--iterations", default=5, help="Number of evolution iterations")
+@click.option(
+    "--eval-source", default="synthetic", help="synthetic or reflection_records"
+)
+def skill_evolve(slug, iterations, eval_source):
+    """Evolve a skill using DSPy-style optimization."""
+    store = SQLiteMemoryStore()
+    from nanoagent.evolution.pipeline import EvolutionPipeline
+    from nanoagent.evolution.config import EvolutionConfig
+
+    config = EvolutionConfig(iterations=iterations, eval_source=eval_source)
+    pipeline = EvolutionPipeline(store=store, config=config)
+    console.print(f"[bold]Evolving skill '{slug}'...[/bold]")
+    result = pipeline.evolve(slug, iterations=iterations)
+    if not result.get("success"):
+        console.print(
+            f"[red]Evolution failed: {result.get('error', 'unknown error')}[/red]"
+        )
+        return
+    baseline = result.get("baseline", {})
+    best = result.get("best_fitness", {})
+    console.print(
+        f"[bold]Baseline fitness:[/bold] {baseline.get('fitness_score', 0):.3f}"
+    )
+    console.print(f"[bold]Evolved fitness:[/bold] {best.get('fitness_score', 0):.3f}")
+    improved = result.get("improved", False)
+    if improved:
+        console.print("[green]✓ Evolution improved the skill![/green]")
+        if click.confirm("Accept the evolved variant?"):
+            evolved_code = result.get("best_variant", "")
+            if pipeline.accept_evolution(slug, evolved_code):
+                console.print(
+                    f"[green]Skill '{slug}' updated with evolved version.[/green]"
+                )
+            else:
+                console.print("[red]Failed to update skill.[/red]")
+    else:
+        console.print(
+            "[yellow]Evolution did not improve baseline. Keeping current version.[/yellow]"
+        )
+
+
+# ─── Harness CLI ───────────────────────────────────────────────────────
+
+
+@cli.group()
+def harness():
+    """Introspect agent configuration and state."""
+
+
+@harness.command("report")
+def harness_report():
+    """Generate full harness introspection report."""
+    config = AgentConfig()
+    store = SQLiteMemoryStore()
+    analyzer = HarnessAnalyzer(config=config, memory_store=store)
+    console.print(analyzer.report())
+
+
+@harness.command("analyze")
+def harness_analyze():
+    """Analyze harness for optimization recommendations."""
+    config = AgentConfig()
+    store = SQLiteMemoryStore()
+    analyzer = HarnessAnalyzer(config=config, memory_store=store)
+    recs = analyzer.analyze()
+    if not recs:
+        console.print("[green]No recommendations — harness looks healthy.[/green]")
+        return
+    console.print("[bold]Optimization Recommendations:[/bold]")
+    for r in recs:
+        severity_color = {"high": "red", "medium": "yellow", "low": "dim"}.get(
+            r["severity"], "white"
+        )
+        console.print(f"  [{severity_color}][{r['severity'].upper()}][/] {r['type']}")
+        console.print(f"       {r['message']} (confidence: {r['confidence']:.0%})")
+
+
+# ─── Reflection CLI ────────────────────────────────────────────────────
+
+
+@cli.group()
+def reflection():
+    """Inspect agent reflections."""
+
+
+@reflection.command("list")
+@click.option("--limit", default=10, help="Number of reflections to show")
+def reflection_list(limit):
+    """Show recent reflections."""
+    store = SQLiteMemoryStore()
+    reflector = Reflector(store)
+    records = reflector.get_recent(limit=limit)
+    if not records:
+        console.print("[yellow]No reflections found.[/yellow]")
+        return
+    table = Table(title=f"Recent Reflections (last {len(records)})")
+    table.add_column("Turn ID", style="dim")
+    table.add_column("Task")
+    table.add_column("Outcome")
+    table.add_column("Steps")
+    table.add_column("Duration")
+    for r in records:
+        table.add_row(
+            r["turn_id"][:8],
+            r["task_description"][:50],
+            r["outcome"],
+            str(r["steps_taken"]),
+            f"{r['duration_ms']}ms",
+        )
+    console.print(table)
+
+
+@reflection.command("show")
+@click.argument("turn_id")
+def reflection_show(turn_id):
+    """Show a specific reflection."""
+    store = SQLiteMemoryStore()
+    reflector = Reflector(store)
+    record = reflector.get_by_turn_id(turn_id)
+    if not record:
+        console.print(f"[red]Reflection not found: {turn_id}[/red]")
+        return
+    console.print(f"[bold]Turn ID:[/bold] {record['turn_id']}")
+    console.print(f"[bold]Task:[/bold] {record['task_description']}")
+    console.print(f"[bold]Outcome:[/bold] {record['outcome']}")
+    console.print(f"[bold]Steps:[/bold] {record['steps_taken']}")
+    console.print(f"[bold]Duration:[/bold] {record['duration_ms']}ms")
+    errors_raw = record.get("errors", "[]")
+    if errors_raw and errors_raw != "[]":
+        import json as _json
+
+        errors = _json.loads(errors_raw) if isinstance(errors_raw, str) else errors_raw
+        if errors:
+            console.print("[red]Errors:[/red]")
+            for e in errors:
+                console.print(f"  - {e}")
+    lessons_raw = record.get("lessons", "[]")
+    if lessons_raw and lessons_raw != "[]":
+        import json as _json
+
+        lessons = (
+            _json.loads(lessons_raw) if isinstance(lessons_raw, str) else lessons_raw
+        )
+        if lessons:
+            console.print("[bold]Lessons:[/bold]")
+            for lesson in lessons:
+                console.print(f"  - {lesson}")
+
+
+@reflection.command("search")
+@click.argument("query")
+@click.option("--limit", default=10)
+def reflection_search(query, limit):
+    """Search reflections by keyword."""
+    store = SQLiteMemoryStore()
+    reflector = Reflector(store)
+    records = reflector.search(query, limit=limit)
+    if not records:
+        console.print(f"[yellow]No reflections matching '{query}'[/yellow]")
+        return
+    console.print(f"[bold]Found {len(records)} reflection(s):[/bold]")
+    for r in records:
+        console.print(
+            f"  {r['turn_id'][:8]} — {r['task_description'][:60]} [{r['outcome']}]"
+        )
+
+
+@reflection.command("stats")
+def reflection_stats():
+    """Show reflection statistics."""
+    store = SQLiteMemoryStore()
+    reflector = Reflector(store)
+    stats = reflector.get_stats()
+    console.print("[bold]Reflection Statistics[/bold]")
+    console.print(f"  Total turns: {stats.get('total', 0)}")
+    console.print(f"  Success: {stats.get('success_count', 0)}")
+    console.print(f"  Failures: {stats.get('failure_count', 0)}")
+    console.print(f"  Errors: {stats.get('error_count', 0)}")
+    console.print(f"  Avg duration: {stats.get('avg_duration_ms', 0):.0f}ms")
+
+
+@cli.command()
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host")
+@click.option("--port", default=8080, show_default=True, type=int, help="Bind port")
+def web(host, port):
+    """Start the NanoAgent Web UI server."""
+    from .web.server import create_app, run_server
+
+    app = create_app(host=host, port=port)
+    run_server(app, host=host, port=port)
 
 
 if __name__ == "__main__":

@@ -3,13 +3,59 @@ from __future__ import annotations
 import inspect
 import json
 import threading
-import uuid
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum, auto
 from typing import Any
 
 from nanoagent.tool import Tool, py_to_json_schema
 from nanoagent.registry import ToolRegistry
 from nanoagent.memory.sqlite_memory_store import SQLiteMemoryStore
 from nanoagent.skills.skill_storage import SkillStorage
+from nanoagent.llm.base import StreamEvent
+from nanoagent.agent.errors import ProviderRetryableError
+from nanoagent.permissions import PermissionManager
+from nanoagent.truncation import OutputTruncator
+from nanoagent.agent.logging import AgentLogger
+
+# ── Logger ──────────────────────────────────────────────────────────────────
+agent_logger = AgentLogger("nanoagent.agent")
+
+
+class AgentState(Enum):
+    IDLE = auto()
+    THINKING = auto()
+    EXECUTING_TOOLS = auto()
+    AWAITING_INPUT = auto()
+    ERROR = auto()
+
+
+_VALID_TRANSITIONS: dict[AgentState, set[AgentState]] = {
+    AgentState.IDLE: {AgentState.THINKING},
+    AgentState.THINKING: {
+        AgentState.EXECUTING_TOOLS,
+        AgentState.AWAITING_INPUT,
+        AgentState.IDLE,
+        AgentState.ERROR,
+    },
+    AgentState.EXECUTING_TOOLS: {
+        AgentState.THINKING,
+        AgentState.AWAITING_INPUT,
+        AgentState.ERROR,
+    },
+    AgentState.AWAITING_INPUT: {AgentState.IDLE},
+    AgentState.ERROR: {AgentState.IDLE, AgentState.THINKING},
+}
+
+
+@dataclass
+class StateTransition:
+    from_state: AgentState
+    to_state: AgentState
+    reason: str
+    timestamp: datetime = field(default_factory=datetime.now)
+    metadata: dict = field(default_factory=dict)
 
 
 def _from_legacy_tool(tool_obj: Any, name: str) -> Tool:
@@ -62,19 +108,28 @@ class Agent:
         self.llm_provider = llm_provider
         self.skill_storage = SkillStorage(db_path=db_path, store=self.memory)
 
+        # ── State machine ──────────────────────────────────────────────────
+        self._state = AgentState.IDLE
+        self._state_listeners: list[callable] = []
+
         # ── Execution control ──────────────────────────────────────────────
         self.cancelled = False
         self.pause_event = threading.Event()
         self.pause_event.set()
         self.loop_warning_count = 0
         self._prev_tool_sigs: list[tuple[str, str]] | None = None
+        self.loop_config: object | None = None
+        self.progress_controller: object | None = None
+        self.diagnostics_collector: object | None = None
 
         # ── Callbacks ──────────────────────────────────────────────────────
+        # on_state_change(transition) → called on every state transition
         # on_thinking()              → called before each LLM request
         # on_tool_call(name, args)   → called before a tool is executed
         # on_tool_result(name, res)  → called after a tool returns
         # on_skill_call(name, args)  → called before a skill is executed
         # on_skill_result(name, res) → called after a skill returns
+        self.on_state_change: Any = None
         self.on_thinking: Any = None
         self.on_tool_call: Any = None
         self.on_tool_result: Any = None
@@ -83,6 +138,7 @@ class Agent:
         self.on_paused: Any = None
         self.on_cancelled: Any = None
         self.on_loop_detected: Any = None
+        self.on_turn_complete: Any = None
 
         from nanoagent.config import AgentConfig
 
@@ -91,6 +147,35 @@ class Agent:
         self.flush_min_turns = config.flush_min_turns
         self.nudge_interval = config.nudge_interval
         self.nudge_tool_calls = config.nudge_tool_calls
+        self.max_tokens = config.max_tokens
+        self.temperature = config.temperature
+        self.retry_attempts = config.retry_attempts
+        self.stream_enabled = config.stream
+        self.loop_config = config.loop
+        self._config_providers = dict(config.providers) if config.providers else {}
+
+        # Register built-in tools and wire permissions + truncation
+        permissions_config = getattr(config, "permissions_config", {})
+        max_output_chars = getattr(config, "max_output_chars", 10_240)
+
+        pm = PermissionManager.load_from_config(permissions_config)
+        trunc = OutputTruncator(max_chars=max_output_chars)
+
+        from nanoagent.agent.tools import register_builtin_tools
+
+        self._tools = ToolRegistry(permission_manager=pm, output_truncator=trunc)
+        register_builtin_tools(self._tools)
+
+        # Auto-load skills from DB
+        try:
+            from nanoagent.skills.loader import SkillsLoader, SkillContext
+
+            ctx = SkillContext(tools=dict(self._tools.all()), memory=self.memory)
+            db_skills = SkillsLoader.load_from_db(self.skill_storage, context=ctx)
+            for name, wrapper in db_skills.items():
+                self._skills[name] = wrapper
+        except Exception:
+            pass
 
         self.background_review = None
         if self.review_enabled:
@@ -101,6 +186,36 @@ class Agent:
                 nudge_interval=self.nudge_interval,
                 nudge_tool_calls=self.nudge_tool_calls,
             )
+
+    @property
+    def state(self) -> AgentState:
+        return self._state
+
+    def add_state_listener(self, listener: callable) -> None:
+        self._state_listeners.append(listener)
+
+    def _transition(
+        self, to_state: AgentState, reason: str = "", **metadata: object
+    ) -> None:
+        from_state = self._state
+        allowed = _VALID_TRANSITIONS.get(from_state, set())
+        if to_state not in allowed:
+            from nanoagent.agent.errors import StateTransitionError
+
+            raise StateTransitionError(
+                f"Invalid transition: {from_state.name} -> {to_state.name}"
+            )
+        self._state = to_state
+        transition = StateTransition(
+            from_state=from_state,
+            to_state=to_state,
+            reason=reason,
+            metadata=metadata,
+        )
+        if self.on_state_change:
+            self.on_state_change(transition)
+        for listener in self._state_listeners:
+            listener(transition)
 
     @property
     def tools(self) -> dict[str, Any]:
@@ -123,7 +238,14 @@ class Agent:
             self._tools.register(tool_obj, name=name)
 
     def execute_tool(self, name: str, arguments: dict) -> str:
-        return self._tools.execute(name, arguments)
+        logger = AgentLogger.get()
+        logger.tool_call(name, arguments)
+
+        start = time.monotonic()
+        result = self._tools.execute(name, arguments)
+        elapsed = time.monotonic() - start
+        logger.debug("TOOL %s done in %.3fs (%d chars)", name, elapsed, len(result))
+        return result
 
     def tool_schemas(self, provider: str = "openai") -> list[dict]:
         if provider == "anthropic":
@@ -176,6 +298,7 @@ class Agent:
         base_prompt: str | None = None,
         inject_memory: bool = True,
         inject_failures: bool = True,
+        query: str | None = None,
     ) -> str:
         """Construct the rich system prompt injecting memory context and policy."""
         from nanoagent.memory.constants import MEMORY_POLICY_PROMPT
@@ -210,6 +333,26 @@ class Agent:
                     memory_block.append(f"Project Memories:\n{project_memories}")
                 parts.append("<memory>\n" + "\n\n".join(memory_block) + "\n</memory>")
 
+            # 4. Semantic memory retrieval if query provided
+            if query and hasattr(self.memory, "semantic_search"):
+                try:
+                    semantic_entries = self.memory.semantic_search(
+                        query, target="memory", limit=5
+                    )
+                    if semantic_entries:
+                        from nanoagent.agent.context import select_top_memories
+
+                        texts = [e.content for e in semantic_entries]
+                        selected = select_top_memories(texts, max_tokens=1000)
+                        if selected:
+                            parts.append(
+                                "<semantic-memory>\n"
+                                + "\n".join(f"- {t}" for t in selected)
+                                + "\n</semantic-memory>"
+                            )
+                except Exception:
+                    pass
+
         if inject_failures:
             failures = self.memory.search_failures(
                 project_path=self.project_path, limit=5
@@ -226,6 +369,25 @@ class Agent:
 
         return "\n\n".join(parts)
 
+    def _chat_with_retry(self, *args, **kwargs):
+        attempts_left = max(getattr(self, "retry_attempts", None) or 3, 1)
+        last_exc = None
+        for attempt in range(attempts_left):
+            try:
+                return self.llm_provider.chat(*args, **kwargs)
+            except ProviderRetryableError as e:
+                last_exc = e
+                if attempt < attempts_left - 1:
+                    wait = 1.0 * (2**attempt)
+                    import time as _time
+
+                    _time.sleep(wait)
+                    continue
+                raise
+            except Exception:
+                raise
+        raise last_exc  # type: ignore[misc]
+
     def run(
         self,
         prompt: str,
@@ -233,6 +395,9 @@ class Agent:
         max_iterations: int = 10,
         messages: list[dict] | None = None,
         session_id: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        turn: object | None = None,
     ) -> tuple[str, list[dict]]:
         if not self.llm_provider:
             return f"Agent received: {prompt}", []
@@ -241,6 +406,18 @@ class Agent:
         self.loop_warning_count = 0
         self._prev_tool_sigs = None
         self.pause_event.set()
+
+        if self._state != AgentState.IDLE:
+            self._state = AgentState.IDLE
+
+        if turn is not None:
+            stop_reason = getattr(turn, "start", lambda p: None)(prompt)
+            if stop_reason and getattr(stop_reason, "value", None) in (
+                "done",
+                "max_steps",
+                "error",
+            ):
+                return "Turn blocked before execution.", messages if messages else []
 
         if session_id:
             stored = self.memory.load_session(session_id)
@@ -264,13 +441,24 @@ class Agent:
                 provider_name = "anthropic"
 
         tools = self.tool_schemas(provider_name)
-        injected_sys = self.build_system_prompt(system_prompt)
+        injected_sys = self.build_system_prompt(system_prompt, query=prompt)
+
+        self._transition(AgentState.THINKING, "received user input")
 
         for _ in range(max_iterations):
             if self.cancelled:
+                self._transition(AgentState.IDLE, "cancelled")
                 if self.on_cancelled:
                     self.on_cancelled()
                 return "Execution cancelled.", messages
+
+            if turn is not None:
+                budget = getattr(turn, "budget", None)
+                if budget is not None and getattr(budget, "budget_exhausted", False):
+                    messages.append(
+                        {"role": "assistant", "content": "Turn budget exhausted."}
+                    )
+                    return "Turn budget exhausted.", messages
 
             self.pause_event.wait()
             if self.on_paused:
@@ -278,18 +466,36 @@ class Agent:
 
             if self.on_thinking:
                 self.on_thinking()
-            response = self.llm_provider.chat(
-                messages=messages,
-                tools=tools if tools else None,
-                system_prompt=injected_sys,
-            )
+            chat_kwargs = {}
+            if max_tokens is not None:
+                chat_kwargs["max_tokens"] = max_tokens
+            if temperature is not None:
+                chat_kwargs["temperature"] = temperature
+            try:
+                response = self._chat_with_retry(
+                    messages=messages,
+                    tools=tools if tools else None,
+                    system_prompt=injected_sys,
+                    **chat_kwargs,
+                )
+            except Exception as exc:
+                self._transition(AgentState.ERROR, f"LLM call failed: {exc}")
+                raise
+
+            if turn is not None:
+                budget = getattr(turn, "budget", None)
+                if budget is not None:
+                    budget.total_llm_calls += 1
 
             if self.cancelled:
+                self._transition(AgentState.IDLE, "cancelled")
                 if self.on_cancelled:
                     self.on_cancelled()
                 return "Execution cancelled.", messages
 
             if response.tool_calls:
+                self._transition(AgentState.EXECUTING_TOOLS, "tool calls received")
+
                 current_sigs = sorted(
                     (tc.name, json.dumps(tc.arguments, sort_keys=True))
                     for tc in response.tool_calls
@@ -308,6 +514,7 @@ class Agent:
                         self.on_loop_detected(self.loop_warning_count)
                     if self.loop_warning_count >= 3:
                         self.pause_event.clear()
+                        self._transition(AgentState.AWAITING_INPUT, "loop detected")
                         messages.append(
                             {
                                 "role": "assistant",
@@ -321,7 +528,343 @@ class Agent:
                     self.loop_warning_count = 0
                 self._prev_tool_sigs = current_sigs
 
-                for tc in response.tool_calls:
+                if len(response.tool_calls) > 1:
+                    tc_pairs = [(tc.name, tc.arguments) for tc in response.tool_calls]
+                    results = self._tools.execute_parallel(tc_pairs)
+                    for i, tc in enumerate(response.tool_calls):
+                        if self.on_tool_call:
+                            self.on_tool_call(tc.name, tc.arguments)
+                        if self.on_tool_result:
+                            self.on_tool_result(tc.name, results[i])
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": tc.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc.name,
+                                            "arguments": json.dumps(tc.arguments),
+                                        },
+                                    }
+                                ],
+                            }
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": results[i],
+                            }
+                        )
+                else:
+                    for tc in response.tool_calls:
+                        if self.on_tool_call:
+                            self.on_tool_call(tc.name, tc.arguments)
+                        result = self.execute_tool(tc.name, tc.arguments)
+                        if self.on_tool_result:
+                            self.on_tool_result(tc.name, result)
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": tc.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc.name,
+                                            "arguments": json.dumps(tc.arguments),
+                                        },
+                                    }
+                                ],
+                            }
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": result,
+                            }
+                        )
+
+                if session_id:
+                    self.memory.save_session(
+                        session_id, messages, project=self.project_path, status="active"
+                    )
+
+                self._transition(AgentState.THINKING, "tool results ready, continuing")
+
+                if turn is not None:
+                    budget = getattr(turn, "budget", None)
+                    if budget is not None:
+                        budget.total_tool_calls += len(response.tool_calls)
+                    ev_result = getattr(turn, "evaluate_progress", lambda: None)()
+                    if ev_result is not None:
+                        action = getattr(ev_result, "action", None)
+                        if action and getattr(action, "value", "") == "stop":
+                            return "Turn stopped by progress controller.", messages
+            else:
+                self.loop_warning_count = 0
+                self._prev_tool_sigs = None
+                self._transition(AgentState.IDLE, "response ready")
+                messages.append(
+                    {"role": "assistant", "content": response.content or ""}
+                )
+
+                tc_count = sum(
+                    len(msg.get("tool_calls") or [])
+                    for msg in messages
+                    if msg.get("role") == "assistant" and msg.get("tool_calls")
+                )
+                if self.background_review:
+                    self.background_review.on_turn_end(
+                        turn_count=1, tool_calls=tc_count, messages=messages
+                    )
+                self._fire_turn_complete(response.content or "", messages)
+
+                if session_id:
+                    self.memory.save_session(
+                        session_id, messages, project=self.project_path, status="active"
+                    )
+
+                return response.content or "", messages
+
+        messages.append({"role": "assistant", "content": "Max iterations reached."})
+
+        tc_count = sum(
+            len(msg.get("tool_calls") or [])
+            for msg in messages
+            if msg.get("role") == "assistant" and msg.get("tool_calls")
+        )
+        if self.background_review:
+            self.background_review.on_turn_end(
+                turn_count=1, tool_calls=tc_count, messages=messages
+            )
+        self._fire_turn_complete("Max iterations reached.", messages)
+
+        if session_id:
+            self.memory.save_session(
+                session_id, messages, project=self.project_path, status="active"
+            )
+
+        return "Max iterations reached.", messages
+
+    def _fire_turn_complete(self, response_text: str, messages: list[dict]) -> None:
+        if not self.on_turn_complete:
+            return
+        tool_results = []
+        errors = []
+        for msg in messages:
+            if msg.get("role") == "tool":
+                content = msg.get("content", "")
+                if content.startswith("Error:"):
+                    errors.append({"tool": msg.get("name", ""), "error": content})
+                tool_results.append(msg)
+        self.on_turn_complete(
+            response=response_text,
+            messages=messages,
+            tool_results=tool_results,
+            errors=errors,
+            duration_ms=0,
+        )
+
+    def run_stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        max_iterations: int = 10,
+        messages: list[dict] | None = None,
+        session_id: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ):
+        if not self.llm_provider:
+            yield StreamEvent(type="content", delta=f"Agent received: {prompt}")
+            yield StreamEvent(type="done")
+            return
+
+        self.cancelled = False
+        self.loop_warning_count = 0
+        self._prev_tool_sigs = None
+        self.pause_event.set()
+
+        if self._state != AgentState.IDLE:
+            self._state = AgentState.IDLE
+
+        if session_id:
+            stored = self.memory.load_session(session_id)
+            if stored and stored["messages"]:
+                messages = list(stored["messages"])
+
+        if messages is None:
+            messages = [{"role": "user", "content": prompt}]
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        if session_id:
+            self.memory.save_session(
+                session_id, messages, project=self.project_path, status="active"
+            )
+
+        provider_name = "openai"
+        if self.llm_provider:
+            provider_class = self.llm_provider.__class__.__name__.lower()
+            if "anthropic" in provider_class:
+                provider_name = "anthropic"
+
+        tools = self.tool_schemas(provider_name)
+        injected_sys = self.build_system_prompt(system_prompt, query=prompt)
+
+        self._transition(AgentState.THINKING, "received user input (streaming)")
+
+        for _ in range(max_iterations):
+            if self.cancelled:
+                self._transition(AgentState.IDLE, "cancelled")
+                if self.on_cancelled:
+                    self.on_cancelled()
+                yield StreamEvent(type="content", delta="Execution cancelled.")
+                yield StreamEvent(type="done")
+                return
+
+            self.pause_event.wait()
+            if self.on_paused:
+                self.on_paused()
+            if self.on_thinking:
+                self.on_thinking()
+
+            chat_kwargs = {}
+            if max_tokens is not None:
+                chat_kwargs["max_tokens"] = max_tokens
+            if temperature is not None:
+                chat_kwargs["temperature"] = temperature
+
+            try:
+                stream = self._chat_with_retry(
+                    messages=messages,
+                    tools=tools if tools else None,
+                    system_prompt=injected_sys,
+                    stream=True,
+                    **chat_kwargs,
+                )
+            except Exception as exc:
+                self._transition(AgentState.ERROR, f"LLM call failed: {exc}")
+                yield StreamEvent(type="content", delta=f"Error: {exc}")
+                yield StreamEvent(type="done")
+                return
+
+            content_parts: list[str] = []
+            _tool_calls_data: list[dict[str, Any]] = []
+            for event in stream:
+                if self.cancelled:
+                    self._transition(AgentState.IDLE, "cancelled")
+                    yield StreamEvent(type="done")
+                    return
+                if event.type == "content":
+                    content_parts.append(event.delta or "")
+                    yield event
+                elif event.type == "tool_call":
+                    _tool_calls_data.append(event.delta or {})
+                    yield event
+                elif event.type == "done":
+                    break
+
+            content = "".join(content_parts)
+
+            if _tool_calls_data:
+                self._transition(AgentState.EXECUTING_TOOLS, "tool calls from stream")
+                from nanoagent.llm.base import ToolCall as TCall
+
+                def _safe_name(val: Any) -> str:
+                    return val if val else ""
+
+                def _extract_tc_name(tc: dict) -> str:
+                    name = tc.get("name")
+                    if name:
+                        return name
+                    func = tc.get("function")
+                    if func is None:
+                        return ""
+                    if isinstance(func, dict):
+                        return _safe_name(func.get("name"))
+                    return _safe_name(getattr(func, "name", None))
+
+                def _extract_tc_args(tc: dict) -> dict:
+                    args = tc.get("arguments")
+                    if args:
+                        if isinstance(args, dict):
+                            return args
+                        return {}
+                    inp = tc.get("input")
+                    if inp and isinstance(inp, dict):
+                        return inp
+                    return {}
+
+                def _try_parse_json(raw: str) -> dict:
+                    try:
+                        return json.loads(raw) if raw.strip() else {}
+                    except (json.JSONDecodeError, ValueError):
+                        return {}
+
+                # Accumulate streaming tool call deltas by id: a single logical
+                # tool call can span multiple stream chunks. Merge partial args.
+                merged: dict[str, dict[str, Any]] = {}
+                last_tid: str = ""
+                for tc in _tool_calls_data:
+                    tid = tc.get("id") or ""
+                    if tid:
+                        last_tid = tid
+                    else:
+                        tid = last_tid
+                    if not tid:
+                        continue
+                    if tid not in merged:
+                        merged[tid] = {"id": tid, "name": "", "arguments": ""}
+                    name = _extract_tc_name(tc)
+                    if name:
+                        merged[tid]["name"] = name
+                    func = tc.get("function")
+                    if func is not None:
+                        raw_args = ""
+                        if isinstance(func, dict):
+                            raw_args = func.get("arguments") or ""
+                        else:
+                            raw_args = getattr(func, "arguments", "") or ""
+                        merged[tid]["arguments"] += raw_args
+
+                tool_calls = [
+                    TCall(
+                        id=v["id"],
+                        name=v["name"] or "unknown",
+                        arguments=_try_parse_json(v["arguments"]),
+                    )
+                    for v in merged.values()
+                    if v["name"]
+                ]
+
+                current_sigs = sorted(
+                    (tc.name, json.dumps(tc.arguments, sort_keys=True))
+                    for tc in tool_calls
+                )
+                if (
+                    self._prev_tool_sigs is not None
+                    and current_sigs == self._prev_tool_sigs
+                ):
+                    self.loop_warning_count += 1
+                    if self.loop_warning_count >= 3:
+                        self._transition(AgentState.AWAITING_INPUT, "loop detected")
+                        yield StreamEvent(
+                            type="content", delta="Auto-paused: loop detected."
+                        )
+                        yield StreamEvent(type="done")
+                        return
+                else:
+                    self.loop_warning_count = 0
+                self._prev_tool_sigs = current_sigs
+
+                for tc in tool_calls:
                     if self.on_tool_call:
                         self.on_tool_call(tc.name, tc.arguments)
                     result = self.execute_tool(tc.name, tc.arguments)
@@ -344,52 +887,23 @@ class Agent:
                         }
                     )
                     messages.append(
-                        {"role": "tool", "tool_call_id": tc.id, "content": result}
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": result,
+                        }
                     )
 
-                if session_id:
-                    self.memory.save_session(
-                        session_id, messages, project=self.project_path, status="active"
-                    )
+                self._transition(AgentState.THINKING, "tool results ready")
             else:
-                self.loop_warning_count = 0
-                self._prev_tool_sigs = None
-                messages.append(
-                    {"role": "assistant", "content": response.content or ""}
-                )
-
-                tc_count = sum(
-                    len(msg.get("tool_calls") or [])
-                    for msg in messages
-                    if msg.get("role") == "assistant" and msg.get("tool_calls")
-                )
-                if self.background_review:
-                    self.background_review.on_turn_end(
-                        turn_count=1, tool_calls=tc_count, messages=messages
-                    )
-
+                self._transition(AgentState.IDLE, "response ready")
+                messages.append({"role": "assistant", "content": content})
                 if session_id:
                     self.memory.save_session(
                         session_id, messages, project=self.project_path, status="active"
                     )
+                yield StreamEvent(type="done")
+                return
 
-                return response.content or "", messages
-
-        messages.append({"role": "assistant", "content": "Max iterations reached."})
-
-        tc_count = sum(
-            len(msg.get("tool_calls") or [])
-            for msg in messages
-            if msg.get("role") == "assistant" and msg.get("tool_calls")
-        )
-        if self.background_review:
-            self.background_review.on_turn_end(
-                turn_count=1, tool_calls=tc_count, messages=messages
-            )
-
-        if session_id:
-            self.memory.save_session(
-                session_id, messages, project=self.project_path, status="active"
-            )
-
-        return "Max iterations reached.", messages
+        yield StreamEvent(type="content", delta="Max iterations reached.")
+        yield StreamEvent(type="done")

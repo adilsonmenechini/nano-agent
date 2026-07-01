@@ -8,14 +8,15 @@ from .base import BaseLLMProvider, LLMResponse, ToolCall
 
 
 class AnthropicProvider(BaseLLMProvider):
-    def __init__(self, api_key: str, base_url: str, model: str):
-        super().__init__(api_key, base_url, model)
+    def __init__(self, api_key: str, base_url: str, model: str, timeout: float = 120.0):
+        super().__init__(api_key, base_url, model, timeout)
         self.client = anthropic.Anthropic(
             api_key=self.api_key,
             base_url=self.base_url or None,
+            timeout=timeout,
         )
 
-    def chat(
+    def _chat(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
@@ -57,3 +58,45 @@ class AnthropicProvider(BaseLLMProvider):
                 "output_tokens": response.usage.output_tokens if response.usage else 0,
             },
         )
+
+    def _chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        system_prompt: str | None = None,
+        **kwargs,
+    ):
+        from .base import StreamEvent
+
+        params = dict(
+            model=self.model,
+            max_tokens=kwargs.pop("max_tokens", 4096),
+            messages=messages,
+            stream=True,
+        )
+        if system_prompt:
+            params["system"] = system_prompt
+        if tools:
+            params["tools"] = tools
+
+        try:
+            stream = self.client.messages.create(**params)
+        except Exception as e:
+            raise RuntimeError(f"Anthropic API error: {e}") from e
+
+        for event in stream:
+            if event.type == "content_block_delta" and event.delta:
+                if event.delta.type == "text_delta":
+                    yield StreamEvent(type="content", delta=event.delta.text)
+            elif event.type == "content_block_start" and event.content_block:
+                if event.content_block.type == "tool_use":
+                    yield StreamEvent(
+                        type="tool_call",
+                        delta={
+                            "id": event.content_block.id,
+                            "name": event.content_block.name,
+                            "input": event.content_block.input,
+                        },
+                    )
+
+        yield StreamEvent(type="done")
