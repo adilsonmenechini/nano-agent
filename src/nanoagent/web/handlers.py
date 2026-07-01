@@ -234,6 +234,138 @@ async def handle_toggle_skill(request: web.Request) -> web.Response:
     })
 
 
+# ── Tool handler ─────────────────────────────────────────────────────────
+
+
+async def handle_list_tools(request: web.Request) -> web.Response:
+    """List all registered tools with their schemas."""
+    handler_logger.info("Listing registered tools")
+    agent = _get_agent()
+    try:
+        tools_list = []
+        for tool_obj in agent._tools.all():
+            tools_list.append({
+                "name": tool_obj.name,
+                "description": (tool_obj.description or "")[:200],
+                "parameters": tool_obj.schema.get("function", {}).get("parameters", {}),
+            })
+        handler_logger.debug("Found %d tools", len(tools_list))
+        return _json_response({"tools": tools_list})
+    except Exception as e:
+        handler_logger.error("Error listing tools: %s", str(e), exc_info=True)
+        return _error_response(str(e), 500)
+
+
+# ── Memory handlers ─────────────────────────────────────────────────────
+
+
+async def handle_memory_search(request: web.Request) -> web.Response:
+    """Search memories via FTS5."""
+    query = request.query.get("q", "")
+    if not query:
+        return _error_response("Query parameter 'q' is required", 400)
+    target = request.query.get("target", None)
+    limit_raw = request.query.get("limit", "20")
+    try:
+        limit = max(1, min(int(limit_raw), 100))
+    except (ValueError, TypeError):
+        limit = 20
+
+    handler_logger.info("Memory search: %s (target=%s, limit=%d)", query, target, limit)
+    agent = _get_agent()
+    try:
+        results = agent.memory.search(query, target=target, limit=limit)
+        entries = []
+        for r in results:
+            entries.append({
+                "id": r.id,
+                "target": r.target,
+                "category": r.category,
+                "key": r.key,
+                "content": r.content[:300],
+                "created": r.created,
+                "last_referenced": r.last_referenced,
+            })
+        return _json_response({"results": entries, "query": query, "count": len(entries)})
+    except Exception as e:
+        handler_logger.error("Error searching memory: %s", str(e), exc_info=True)
+        return _error_response(str(e), 500)
+
+
+async def handle_memory_insights(request: web.Request) -> web.Response:
+    """Show memory statistics."""
+    agent = _get_agent()
+    try:
+        rows = agent.memory.conn.execute(
+            "SELECT target, COUNT(*) as cnt, MIN(created) as oldest, MAX(created) as newest FROM memories GROUP BY target"
+        ).fetchall()
+        stats = []
+        total = 0
+        for r in rows:
+            stats.append({
+                "target": r["target"],
+                "count": r["cnt"],
+                "oldest": r["oldest"],
+                "newest": r["newest"],
+            })
+            total += r["cnt"]
+        return _json_response({"stats": stats, "total": total})
+    except Exception as e:
+        handler_logger.error("Error getting memory stats: %s", str(e), exc_info=True)
+        return _error_response(str(e), 500)
+
+
+async def handle_memory_consolidate(request: web.Request) -> web.Response:
+    """Run memory consolidation (dedup)."""
+    agent = _get_agent()
+    try:
+        removed = agent.memory.consolidate_dedup()
+        return _json_response({"status": "consolidated", "duplicates_removed": removed})
+    except Exception as e:
+        handler_logger.error("Error consolidating memory: %s", str(e), exc_info=True)
+        return _error_response(str(e), 500)
+
+
+# ── Shell handler ────────────────────────────────────────────────────────
+
+
+async def handle_shell(request: web.Request) -> web.Response:
+    """Execute a shell command and return output."""
+    try:
+        body = await request.json()
+    except Exception:
+        return _error_response("Invalid JSON body", 400)
+
+    command = body.get("command", "")
+    if not command:
+        return _error_response("Field 'command' is required", 400)
+
+    handler_logger.warning("Shell execution requested: %s", command[:80])
+
+    import subprocess
+    try:
+        result = subprocess.run(
+            command, shell=True, capture_output=True, text=True, timeout=30
+        )
+        output = ""
+        if result.stdout:
+            output += result.stdout
+        if result.stderr:
+            if output:
+                output += "\n"
+            output += f"[stderr]\n{result.stderr}"
+        return _json_response({
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.returncode,
+            "output": output[:5000],
+        })
+    except subprocess.TimeoutExpired:
+        return _json_response({"error": "Command timed out (30s)", "exit_code": -1}, 408)
+    except Exception as e:
+        return _json_response({"error": str(e), "exit_code": -1}, 500)
+
+
 # ── Health handler ────────────────────────────────────────────────────────
 
 
@@ -397,10 +529,27 @@ def setup_routes(app: web.Application) -> None:
     app.middlewares.append(cors_middleware)
 
     app.router.add_get("/api/health", handle_health)
+
+    # Session routes
     app.router.add_get("/api/sessions", handle_list_sessions)
     app.router.add_get("/api/sessions/{id}", handle_get_session)
     app.router.add_post("/api/sessions", handle_create_session)
     app.router.add_delete("/api/sessions/{id}", handle_delete_session)
+
+    # Skill routes
     app.router.add_get("/api/skills", handle_list_skills)
     app.router.add_patch("/api/skills/{name}", handle_toggle_skill)
+
+    # Tool routes
+    app.router.add_get("/api/tools", handle_list_tools)
+
+    # Memory routes
+    app.router.add_get("/api/memory/search", handle_memory_search)
+    app.router.add_get("/api/memory/insights", handle_memory_insights)
+    app.router.add_post("/api/memory/consolidate", handle_memory_consolidate)
+
+    # Shell route (non-interactive commands only)
+    app.router.add_post("/api/shell", handle_shell)
+
+    # WebSocket chat
     app.router.add_get("/ws/chat", handle_websocket)

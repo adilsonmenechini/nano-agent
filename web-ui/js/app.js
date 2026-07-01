@@ -29,6 +29,7 @@ class App {
     this.chat = new ChatPanel(this.chatMessages, this.indicator);
     this.sessions = new SessionManager(this.sessionList);
     this.skills = new SkillManager(this.skillList);
+    this.commandRouter = new CommandRouter(this);
 
     this.sessions.onSessionSelected = (id) => this.loadSession(id);
     this.setupEventListeners();
@@ -274,9 +275,26 @@ class App {
     }
   }
 
-  sendMessage() {
+  async sendMessage() {
     const text = this.chatInput.value.trim();
-    if (!text || !this.bridge || !this.currentSessionId) return;
+    if (!text || !this.currentSessionId) return;
+
+    // Try command router first (handles /commands and !shell)
+    if (this.commandRouter) {
+      const handled = await this.commandRouter.handle(text, this.chat);
+      if (handled) {
+        this.chatInput.value = '';
+        this.sendBtn.disabled = true;
+        this.chatInput.focus();
+        return;
+      }
+    }
+
+    // Regular message — needs WebSocket bridge
+    if (!this.bridge) {
+      this.chat.showError('Not connected. Please wait for connection.');
+      return;
+    }
 
     this.chat.addUserMessage(text);
     this.storeMessage(this.currentSessionId, { role: 'user', content: text });

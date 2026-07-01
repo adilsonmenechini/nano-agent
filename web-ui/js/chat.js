@@ -343,6 +343,64 @@ class ChatPanel {
     }
   }
 
+  /** Add a formatted command result message in the chat */
+  addCommandMessage(command, htmlContent) {
+    const div = document.createElement('div');
+    div.className = 'message command';
+
+    const header = document.createElement('div');
+    header.className = 'message-header';
+    header.textContent = `Command: ${command}`;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble command-bubble';
+    bubble.innerHTML = htmlContent;
+
+    const ts = document.createElement('div');
+    ts.className = 'message-timestamp';
+    const now = new Date();
+    ts.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    ts.setAttribute('datetime', now.toISOString());
+
+    div.appendChild(header);
+    div.appendChild(bubble);
+    div.appendChild(ts);
+    this.container.appendChild(div);
+    this.scrollToBottom();
+  }
+
+  /** Add a simple system notification message */
+  addSystemMessage(text) {
+    const div = document.createElement('div');
+    div.className = 'message system';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble system-bubble';
+    bubble.textContent = text;
+
+    div.appendChild(bubble);
+    this.container.appendChild(div);
+    this.scrollToBottom();
+  }
+
+  /** Get all parsed messages from the DOM (for history) */
+  _getAllMessages() {
+    const msgDivs = this.container.querySelectorAll('.message');
+    const messages = [];
+    for (const el of msgDivs) {
+      if (el.classList.contains('user')) {
+        const bubble = el.querySelector('.message-bubble');
+        const content = bubble ? bubble.textContent || '' : '';
+        if (content) messages.push({ role: 'user', content });
+      } else if (el.classList.contains('agent')) {
+        const bubble = el.querySelector('.message-bubble');
+        const content = bubble ? bubble.textContent || '' : '';
+        if (content) messages.push({ role: 'assistant', content });
+      }
+    }
+    return messages;
+  }
+
   _msgId() {
     const ts = performance.now().toString(36).replace(/\./g, '');
     const rand = Math.random().toString(36).slice(2, 7);

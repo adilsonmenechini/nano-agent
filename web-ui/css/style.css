@@ -694,6 +694,59 @@ html, body {
   .input-wrapper { border-radius: 16px; }
 }
 
+/* ─── Command Messages (system, command results) ─────────────────── */
+
+.message.system {
+  align-self: center;
+  max-width: 600px;
+  width: 100%;
+}
+
+.message.system .message-bubble {
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  font-size: 13px;
+  padding: 10px 18px;
+  text-align: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.message.command {
+  align-self: flex-start;
+  max-width: 700px;
+  width: 100%;
+}
+
+.message.command .message-header {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--accent-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.message.command .message-bubble {
+  background: rgba(15, 15, 25, 0.7);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  border-bottom-left-radius: 4px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 700px;
+  width: 100%;
+}
+
+.message.command .message-bubble pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.message.command .message-bubble table th {
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
 /* Toasts / Notifications */
 .toast-root {
   position: fixed;
