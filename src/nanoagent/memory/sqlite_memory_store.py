@@ -171,7 +171,9 @@ class SQLiteMemoryStore:
         """)
         # Add status column to skills table if not present (schema migration)
         try:
-            self.conn.execute("ALTER TABLE skills ADD COLUMN status TEXT DEFAULT 'active'")
+            self.conn.execute(
+                "ALTER TABLE skills ADD COLUMN status TEXT DEFAULT 'active'"
+            )
         except sqlite3.OperationalError:
             pass
 
@@ -368,8 +370,10 @@ class SQLiteMemoryStore:
         embedding_blob: bytes | None = None
         try:
             from .embeddings import compute_embedding
+
             emb = compute_embedding(value)
             import struct
+
             embedding_blob = struct.pack(f"{len(emb)}d", *emb)
         except Exception:
             embedding_blob = None
@@ -377,7 +381,19 @@ class SQLiteMemoryStore:
             """INSERT INTO memories (project, target, category, key, content,
                failure_reason, tool_state, corrected_to, created, last_referenced, embedding)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (project_id, target, category, key, value, None, None, None, now, now, embedding_blob),
+            (
+                project_id,
+                target,
+                category,
+                key,
+                value,
+                None,
+                None,
+                None,
+                now,
+                now,
+                embedding_blob,
+            ),
         )
         self.conn.commit()
 
@@ -440,7 +456,9 @@ class SQLiteMemoryStore:
             )
             row = cursor.fetchone()
             if row and row["embedding"]:
-                stored = list(struct.unpack(f"{len(row['embedding']) // 8}d", row["embedding"]))
+                stored = list(
+                    struct.unpack(f"{len(row['embedding']) // 8}d", row["embedding"])
+                )
                 sim = cosine_similarity(query_emb, stored)
             else:
                 sim = 0.0

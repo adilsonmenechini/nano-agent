@@ -1,8 +1,6 @@
 """End-to-end tests for the NanoAgent Web UI using Playwright."""
 
 import asyncio
-import json
-import os
 import re
 import socket
 import threading
@@ -160,14 +158,20 @@ class TestE2E:
 
         # Check console for 404 errors
         console_errors = []
-        page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+        page.on(
+            "console",
+            lambda msg: (
+                console_errors.append(msg.text) if msg.type == "error" else None
+            ),
+        )
 
         page.reload()
         page.wait_for_load_state("networkidle")
 
         # Filter out favicon, CSP, and API call errors (APIs may fail without real agent)
         file_errors = [
-            e for e in console_errors
+            e
+            for e in console_errors
             if "favicon" not in e.lower()
             and "csp" not in e.lower()
             and "content security" not in e.lower()

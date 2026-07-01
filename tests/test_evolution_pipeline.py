@@ -15,7 +15,9 @@ def test_evolve_unknown_skill():
 
 def test_evolve_creates_report():
     store = SQLiteMemoryStore(":memory:")
-    store.add_skill("test-skill", "Test", "a test skill", '"""Test skill"""\nprint("hello")')
+    store.add_skill(
+        "test-skill", "Test", "a test skill", '"""Test skill"""\nprint("hello")'
+    )
     pipeline = EvolutionPipeline(store=store)
     result = pipeline.evolve("test-skill", iterations=2)
     assert result.get("success") is True
@@ -31,7 +33,9 @@ def test_accept_evolution_nonexistent():
 
 def test_accept_evolution_updates():
     store = SQLiteMemoryStore(":memory:")
-    store.add_skill("evolve-me", "Evolve", "will be evolved", '"""Original"""\nprint("old")')
+    store.add_skill(
+        "evolve-me", "Evolve", "will be evolved", '"""Original"""\nprint("old")'
+    )
     pipeline = EvolutionPipeline(store=store)
     assert pipeline.accept_evolution("evolve-me", '"""Evolved"""\nprint("new")') is True
     updated = store.get_skill("evolve-me")

@@ -23,7 +23,9 @@ def _git_cmd(args: list[str], path: str = ".") -> str:
             cwd=Path(path).resolve(),
         )
         if result.returncode != 0:
-            error_msg = result.stderr.strip() or f"git exited with code {result.returncode}"
+            error_msg = (
+                result.stderr.strip() or f"git exited with code {result.returncode}"
+            )
             return f"Error: {error_msg}"
         return result.stdout.rstrip("\n")
     except FileNotFoundError:

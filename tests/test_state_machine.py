@@ -48,6 +48,7 @@ def test_invalid_transition_not_allowed():
 
 def test_state_transition_dataclass():
     from datetime import datetime
+
     t = StateTransition(
         from_state=AgentState.IDLE,
         to_state=AgentState.THINKING,

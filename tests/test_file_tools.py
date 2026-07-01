@@ -9,6 +9,7 @@ from nanoagent.registry import ToolRegistry
 class TestFileTools:
     def test_read_file(self):
         from nanoagent.agent.tools.file_tools import read_file
+
         with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=os.getcwd()) as f:
             f.write("test content")
             tmp = f.name
@@ -20,11 +21,13 @@ class TestFileTools:
 
     def test_read_file_not_found(self):
         from nanoagent.agent.tools.file_tools import read_file
+
         with pytest.raises(FileNotFoundError):
             read_file(path="/nonexistent/path/file.txt")
 
     def test_write_file(self):
         from nanoagent.agent.tools.file_tools import write_file
+
         fd, tmp = tempfile.mkstemp(dir=os.getcwd())
         os.close(fd)
         os.unlink(tmp)
@@ -36,6 +39,7 @@ class TestFileTools:
 
     def test_glob_file(self):
         from nanoagent.agent.tools.file_tools import glob_file
+
         with tempfile.TemporaryDirectory() as tmpdir:
             open(os.path.join(tmpdir, "a.py"), "w").close()
             open(os.path.join(tmpdir, "b.py"), "w").close()
@@ -45,6 +49,7 @@ class TestFileTools:
 
     def test_grep_file(self):
         from nanoagent.agent.tools.file_tools import grep_file
+
         with tempfile.TemporaryDirectory() as tmpdir:
             fpath = os.path.join(tmpdir, "test.txt")
             with open(fpath, "w") as f:
@@ -55,11 +60,13 @@ class TestFileTools:
 
     def test_path_traversal_protection(self):
         from nanoagent.agent.tools.file_tools import write_file
+
         with pytest.raises(PermissionError):
             write_file(path="/etc/passwd", content="evil")
 
     def test_binary_content_read(self):
         from nanoagent.agent.tools.file_tools import read_file
+
         with tempfile.NamedTemporaryFile(delete=False) as f:
             f.write(b"\xff\xfe\x00\x01")
             tmp = f.name
@@ -70,7 +77,13 @@ class TestFileTools:
             os.unlink(tmp)
 
     def test_registers_in_tool_registry(self):
-        from nanoagent.agent.tools.file_tools import read_file, write_file, glob_file, grep_file
+        from nanoagent.agent.tools.file_tools import (
+            read_file,
+            write_file,
+            glob_file,
+            grep_file,
+        )
+
         registry = ToolRegistry()
         registry.register(read_file)
         registry.register(write_file)

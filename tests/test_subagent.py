@@ -1,4 +1,5 @@
 """Tests for multi-agent delegation (SubAgentManager)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -30,7 +31,10 @@ class TestSubAgentManager:
     def test_delegate_single_task(self, parent_agent):
         with patch(AGENT_PATH) as mock_cls:
             child = MagicMock()
-            child.run.return_value = ("Task completed", [{"role": "assistant", "content": "done"}])
+            child.run.return_value = (
+                "Task completed",
+                [{"role": "assistant", "content": "done"}],
+            )
             mock_cls.return_value = child
 
             manager = SubAgentManager(parent_agent)

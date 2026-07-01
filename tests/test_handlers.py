@@ -111,8 +111,10 @@ def test_background_review_and_session_flush():
 
 def test_make_agent_registers_local_tools():
     import unittest.mock
+
     with unittest.mock.patch("nanoagent.cli._resolve_provider", return_value=None):
         from nanoagent.cli import _make_agent
+
         agent = _make_agent(provider_name=None, project_path=None)
         try:
             assert "web" in agent.tools
@@ -124,6 +126,7 @@ def test_make_agent_registers_local_tools():
 def test_check_config_output():
     from nanoagent.cli import cli
     from click.testing import CliRunner
+
     runner = CliRunner()
     result = runner.invoke(cli, ["check-config"])
     assert result.exit_code == 0
@@ -133,6 +136,7 @@ def test_check_config_output():
 def test_check_config_json():
     from nanoagent.cli import cli
     from click.testing import CliRunner
+
     runner = CliRunner()
     result = runner.invoke(cli, ["check-config", "--json"])
     assert result.exit_code == 0
@@ -144,6 +148,7 @@ def test_check_config_json():
 def test_health_command():
     from nanoagent.cli import cli
     from click.testing import CliRunner
+
     runner = CliRunner()
     result = runner.invoke(cli, ["health"])
     # Exit 0 — providers may show error (no API keys), but the command itself runs
@@ -156,17 +161,18 @@ def test_get_agent_passes_timeout():
 
     # Clear cached agent
     import nanoagent.web.handlers as handlers_module
+
     handlers_module._agent_instance = None
 
-    with unittest.mock.patch('nanoagent.web.handlers.AgentConfig') as mock_config_class, \
-         unittest.mock.patch('nanoagent.web.handlers.OpenAIProvider') as mock_openai:
+    with (
+        unittest.mock.patch("nanoagent.web.handlers.AgentConfig") as mock_config_class,
+        unittest.mock.patch("nanoagent.web.handlers.OpenAIProvider") as mock_openai,
+    ):
         # Setup mock config
         mock_config = unittest.mock.MagicMock()
-        mock_config.default_provider = 'openai'
+        mock_config.default_provider = "openai"
         mock_config.get_provider_config.return_value = unittest.mock.MagicMock(
-            api_key='test-key',
-            base_url='http://test.url',
-            model='test-model'
+            api_key="test-key", base_url="http://test.url", model="test-model"
         )
         mock_config.loop.llm_timeout_seconds = 120.0
         mock_config_class.return_value = mock_config
@@ -180,8 +186,8 @@ def test_get_agent_passes_timeout():
         mock_openai.assert_called_once()
         args, kwargs = mock_openai.call_args
         # Check that timeout keyword argument is present and equals 120.0
-        assert 'timeout' in kwargs
-        assert kwargs['timeout'] == 120.0
+        assert "timeout" in kwargs
+        assert kwargs["timeout"] == 120.0
 
         # Also verify Agent was created with that provider
         assert agent is not None

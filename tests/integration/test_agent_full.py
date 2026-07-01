@@ -1,16 +1,16 @@
-import pytest
 
 
 def test_full_agent_flow_mocked():
     import unittest.mock
     from nanoagent.agent import Agent
-    from nanoagent.llm.base import LLMResponse, ToolCall, StreamEvent
+    from nanoagent.llm.base import LLMResponse, ToolCall
 
     agent = Agent(db_path=":memory:")
     mock_llm = unittest.mock.MagicMock()
 
     class MockTool:
         description = "A mock tool"
+
         def execute(self, **kw):
             return "tool executed"
 
@@ -36,13 +36,14 @@ def test_full_agent_flow_mocked():
 def test_full_agent_stream_flow_mocked():
     import unittest.mock
     from nanoagent.agent import Agent
-    from nanoagent.llm.base import StreamEvent, ToolCall, LLMResponse
+    from nanoagent.llm.base import StreamEvent, LLMResponse
 
     agent = Agent(db_path=":memory:")
     mock_llm = unittest.mock.MagicMock()
 
     class MockTool:
         description = "A mock tool"
+
         def execute(self, **kw):
             return "stream tool executed"
 
@@ -50,9 +51,14 @@ def test_full_agent_stream_flow_mocked():
 
     def side_effect(*args, **kwargs):
         if kwargs.get("stream"):
-            yield StreamEvent(type="tool_call", delta={
-                "id": "t1", "name": "mock_tool", "arguments": {"arg": "val"},
-            })
+            yield StreamEvent(
+                type="tool_call",
+                delta={
+                    "id": "t1",
+                    "name": "mock_tool",
+                    "arguments": {"arg": "val"},
+                },
+            )
             yield StreamEvent(type="done")
         else:
             return LLMResponse(content="Final stream answer")

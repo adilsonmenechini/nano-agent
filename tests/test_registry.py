@@ -1,10 +1,10 @@
 """Tests for ToolRegistry."""
-from unittest.mock import MagicMock
+
 
 import pytest
 
 from nanoagent.registry import ToolRegistry
-from nanoagent.tool import Tool, tool
+from nanoagent.tool import Tool
 
 
 @pytest.fixture
@@ -22,14 +22,17 @@ class TestToolRegistry:
     def test_register_callable(self, registry):
         def fn(x):
             return x
+
         t = registry.register(fn, name="callable_fn")
         assert t.name == "callable_fn"
         assert registry.get("callable_fn") is t
 
     def test_register_callable_no_name(self, registry):
         """Registering a function infers its name."""
+
         def my_func():
             pass
+
         t = registry.register(my_func)
         assert t.name == "my_func"
 

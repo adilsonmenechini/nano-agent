@@ -63,6 +63,7 @@ class ToolRegistry:
             result = self._permission_manager.check(name, command)
             if result is not None:
                 from nanoagent.permissions import PermissionMode
+
                 if result == PermissionMode.DENY:
                     return f"Error: permission denied for tool '{name}'"
                 elif result == PermissionMode.ASK:

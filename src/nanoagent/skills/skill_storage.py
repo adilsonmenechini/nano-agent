@@ -83,6 +83,7 @@ class SkillStorage:
         old_code = entry.code
         old_desc = entry.description
         import time
+
         now = time.time()
         self._save_version(entry.id, old_code, old_desc)
         if scope == "project" and project_path:
@@ -95,14 +96,18 @@ class SkillStorage:
             [
                 code if code is not None else old_code,
                 description if description is not None else old_desc,
-                now, slug, scope,
-            ] + params,
+                now,
+                slug,
+                scope,
+            ]
+            + params,
         )
         self._store.conn.commit()
         return True
 
     def _save_version(self, skill_id: int, code: str, description: str) -> None:
         import time
+
         max_ver = self._store.conn.execute(
             "SELECT COALESCE(MAX(version), 0) FROM skill_versions WHERE skill_id = ?",
             (skill_id,),
@@ -129,7 +134,11 @@ class SkillStorage:
         return [dict(row) for row in cursor.fetchall()]
 
     def rollback(
-        self, slug: str, version: int, scope: str = "global", project_path: str | None = None
+        self,
+        slug: str,
+        version: int,
+        scope: str = "global",
+        project_path: str | None = None,
     ) -> bool:
         entry = self._store.get_skill(slug, scope=scope, project_path=project_path)
         if entry is None:
@@ -156,7 +165,9 @@ class SkillStorage:
         )
         return True
 
-    def activate_skill(self, slug: str, scope: str = "global", project_path: str | None = None) -> bool:
+    def activate_skill(
+        self, slug: str, scope: str = "global", project_path: str | None = None
+    ) -> bool:
         where, params = self._store._project_filter(scope, project_path)
         where = where.replace("project", "project_id")
         cursor = self._store.conn.execute(
@@ -166,7 +177,9 @@ class SkillStorage:
         self._store.conn.commit()
         return cursor.rowcount > 0
 
-    def reject_skill(self, slug: str, scope: str = "global", project_path: str | None = None) -> bool:
+    def reject_skill(
+        self, slug: str, scope: str = "global", project_path: str | None = None
+    ) -> bool:
         where, params = self._store._project_filter(scope, project_path)
         where = where.replace("project", "project_id")
         cursor = self._store.conn.execute(

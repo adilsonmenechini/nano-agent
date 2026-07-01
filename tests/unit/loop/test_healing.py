@@ -1,4 +1,3 @@
-import pytest
 from nanoagent.loop.constants import (
     FaultCategory,
     FaultRecord,
@@ -9,7 +8,6 @@ from nanoagent.loop.constants import (
 from nanoagent.loop.healing import (
     DEFAULT_STRATEGIES,
     HealingEngine,
-    HealingStrategy,
 )
 
 
@@ -38,7 +36,11 @@ class TestHealingStrategy:
         assert len(DEFAULT_STRATEGIES) == 6
 
     def test_retry_strategy(self):
-        retry = [s for s in DEFAULT_STRATEGIES if s.strategy_type == HealingStrategyType.retry][0]
+        retry = [
+            s
+            for s in DEFAULT_STRATEGIES
+            if s.strategy_type == HealingStrategyType.retry
+        ][0]
         assert retry.expected_recovery_seconds == 5.0
         assert retry.success_probability == 0.70
         assert FaultCategory.RESOURCE_EXHAUSTION in retry.applies_to

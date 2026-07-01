@@ -3,6 +3,7 @@
 Tests the wired-together pipeline of all loop components:
 Turn → ProgressController → StabilityMonitor → HealingEngine → DiagnosticsCollector
 """
+
 from nanoagent.loop.constants import (
     FaultCategory,
     FaultRecord,
@@ -48,7 +49,9 @@ class TestHealthDisplayIntegration:  # T028
         config = LoopConfig(health_window_size=5)
         progress = ProgressController(config)
         diagnostics = DiagnosticsCollector(enabled=True)
-        turn = Turn(config, progress_controller=progress, diagnostics_collector=diagnostics)
+        turn = Turn(
+            config, progress_controller=progress, diagnostics_collector=diagnostics
+        )
 
         turn.start("hello")
         decision = turn.evaluate_progress()
@@ -66,9 +69,11 @@ class TestHealthDisplayIntegration:  # T028
         progress = ProgressController(config)
         decision = None
         for _ in range(6):
-            progress.record_step(ProgressSignal(
-                failure_ratio=0.9, error_rate_window=0.8, oscillation_index=0.5
-            ))
+            progress.record_step(
+                ProgressSignal(
+                    failure_ratio=0.9, error_rate_window=0.8, oscillation_index=0.5
+                )
+            )
             decision = progress.evaluate()
 
         assert decision is not None
@@ -115,12 +120,14 @@ class TestDiagnosticsCliIntegration:  # T058
         diagnostics.record_phase(Phase.EXECUTE, 1.200)
         diagnostics.record_tool_call("search", 0.5, True)
         diagnostics.record_health(0.85, "healthy")
-        diagnostics.record_healing({
-            "fault_type": "OSCILLATION",
-            "strategy": "break_oscillation",
-            "success": True,
-            "duration": 0.003,
-        })
+        diagnostics.record_healing(
+            {
+                "fault_type": "OSCILLATION",
+                "strategy": "break_oscillation",
+                "success": True,
+                "duration": 0.003,
+            }
+        )
         rendered = diagnostics.render(StopReason.done)
         assert "Diagnostics" in rendered
         assert "explore" in rendered
@@ -139,7 +146,9 @@ class TestEndToEndPipeline:  # T071
         progress = ProgressController(config)
         stability = StabilityMonitor(config)
         healing = HealingEngine()
-        turn = Turn(config, progress_controller=progress, diagnostics_collector=diagnostics)
+        turn = Turn(
+            config, progress_controller=progress, diagnostics_collector=diagnostics
+        )
 
         turn.start("hello")
 

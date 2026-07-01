@@ -81,8 +81,7 @@ class BaseLLMProvider(ABC):
         tools: list[dict[str, Any]] | None = None,
         system_prompt: str | None = None,
         **kwargs,
-    ) -> LLMResponse:
-        ...
+    ) -> LLMResponse: ...
 
     def _chat_stream(
         self,
@@ -92,7 +91,9 @@ class BaseLLMProvider(ABC):
         **kwargs,
     ) -> Generator[StreamEvent, None, None]:
         """Override in provider subclass to support streaming."""
-        result = self._chat(messages, tools=tools, system_prompt=system_prompt, **kwargs)
+        result = self._chat(
+            messages, tools=tools, system_prompt=system_prompt, **kwargs
+        )
         yield StreamEvent(type="content", delta=result.content or "")
         if result.tool_calls:
             for tc in result.tool_calls:

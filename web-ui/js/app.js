@@ -21,6 +21,7 @@ class App {
     this.sidebarNav = document.getElementById('sidebar-nav');
     this.mainContent = document.querySelector('.main-content');
 
+    this._pendingAgentName = null;
     this._onRetry = this._handleRetry.bind(this);
     document.addEventListener('agent:retry', this._onRetry);
   }
@@ -219,11 +220,21 @@ class App {
     };
 
     this.bridge.on('state_change', onStateChange);
+    this.bridge.on('agent_route_start', (payload) => {
+      const agentName = payload.agent_name || null;
+      if (agentName) {
+        console.debug('[app] agent route: @' + agentName);
+        this._pendingAgentName = agentName;
+      }
+    });
+
     this.bridge.on('message_chunk', (payload) => {
       console.debug('[app] message_chunk', payload);
       this.chat.showIndicator('thinking');
       if (payload.message_id && payload.message_id !== this.chat.currentMessageId) {
-        this.chat.startAgentMessage(payload.message_id);
+        const agentName = this._pendingAgentName || null;
+        this._pendingAgentName = null;
+        this.chat.startAgentMessage(payload.message_id, agentName);
       }
       this.chat.appendChunk(payload.delta);
     });

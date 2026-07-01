@@ -17,12 +17,19 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
     """
     try:
         from nanoagent.agent.tools.shell import run_shell
+
         registry.register(run_shell)
     except ImportError:
         pass
 
     try:
-        from nanoagent.agent.tools.file_tools import read_file, write_file, glob_file, grep_file
+        from nanoagent.agent.tools.file_tools import (
+            read_file,
+            write_file,
+            glob_file,
+            grep_file,
+        )
+
         registry.register(read_file)
         registry.register(write_file)
         registry.register(glob_file)
@@ -32,6 +39,7 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
 
     try:
         from nanoagent.agent.tools.git_tools import git_status, git_diff, git_log
+
         registry.register(git_status)
         registry.register(git_diff)
         registry.register(git_log)
@@ -40,6 +48,7 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
 
     try:
         from nanoagent.agent.tools.introspection import harness_report
+
         registry.register(harness_report)
     except ImportError:
         pass

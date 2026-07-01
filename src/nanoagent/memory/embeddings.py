@@ -9,6 +9,7 @@ def _get_model():
     global _sentence_model
     if _sentence_model is None:
         from sentence_transformers import SentenceTransformer
+
         _sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
     return _sentence_model
 

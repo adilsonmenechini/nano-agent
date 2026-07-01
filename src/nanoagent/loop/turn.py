@@ -138,7 +138,9 @@ class Turn:
         decision = self._progress.evaluate()
 
         if self._diagnostics is not None:
-            self._diagnostics.record_health(float(decision.health_score), decision.health_level.value)
+            self._diagnostics.record_health(
+                float(decision.health_score), decision.health_level.value
+            )
 
         if decision.action == ProgressAction.stop:
             self._stop_reason = StopReason.error

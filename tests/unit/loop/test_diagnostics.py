@@ -1,4 +1,3 @@
-import pytest
 from nanoagent.loop.constants import Phase, StopReason
 from nanoagent.loop.diagnostics import DiagnosticsCollector, DiagnosticsReport
 
@@ -53,12 +52,14 @@ class TestDiagnosticsCollector:
 
     def test_records_healing_action(self):
         collector = DiagnosticsCollector(enabled=True)
-        collector.record_healing({
-            "fault_type": "OSCILLATION",
-            "strategy": "break_oscillation",
-            "success": True,
-            "duration": 0.003,
-        })
+        collector.record_healing(
+            {
+                "fault_type": "OSCILLATION",
+                "strategy": "break_oscillation",
+                "success": True,
+                "duration": 0.003,
+            }
+        )
         report = collector.report()
         assert len(report.healing_actions) == 1
         assert report.healing_actions[0]["fault_type"] == "OSCILLATION"

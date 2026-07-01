@@ -1,4 +1,3 @@
-import pytest
 
 
 def test_openai_provider_mocked():
@@ -6,7 +5,9 @@ def test_openai_provider_mocked():
     from nanoagent.llm.openai import OpenAIProvider
     from nanoagent.llm.base import LLMResponse
 
-    p = OpenAIProvider(api_key="test-key", base_url="http://localhost:9999/v1", model="gpt-4")
+    p = OpenAIProvider(
+        api_key="test-key", base_url="http://localhost:9999/v1", model="gpt-4"
+    )
     p.client = unittest.mock.MagicMock()
     mock_chunk = unittest.mock.MagicMock()
     mock_chunk.choices = [unittest.mock.MagicMock()]
@@ -26,7 +27,9 @@ def test_anthropic_provider_mocked():
     from nanoagent.llm.anthropic import AnthropicProvider
     from nanoagent.llm.base import LLMResponse
 
-    p = AnthropicProvider(api_key="test-key", base_url="http://localhost:9999", model="claude-3-haiku")
+    p = AnthropicProvider(
+        api_key="test-key", base_url="http://localhost:9999", model="claude-3-haiku"
+    )
     p.client = unittest.mock.MagicMock()
     mock_msg = unittest.mock.MagicMock()
     mock_msg.content = [unittest.mock.MagicMock(text="Hello")]
@@ -43,7 +46,9 @@ def test_lmstudio_provider_mocked():
     from nanoagent.llm.lmstudio import LMStudioProvider
     from nanoagent.llm.base import LLMResponse
 
-    p = LMStudioProvider(api_key="not-needed", base_url="http://localhost:9999/v1", model="test")
+    p = LMStudioProvider(
+        api_key="not-needed", base_url="http://localhost:9999/v1", model="test"
+    )
     p.client = unittest.mock.MagicMock()
 
     response = p._chat(messages=[{"role": "user", "content": "Hi"}])
@@ -53,9 +58,10 @@ def test_lmstudio_provider_mocked():
 def test_openai_streaming_events():
     import unittest.mock
     from nanoagent.llm.openai import OpenAIProvider
-    from nanoagent.llm.base import StreamEvent
 
-    p = OpenAIProvider(api_key="test-key", base_url="http://localhost:9999/v1", model="gpt-4")
+    p = OpenAIProvider(
+        api_key="test-key", base_url="http://localhost:9999/v1", model="gpt-4"
+    )
     p.client = unittest.mock.MagicMock()
 
     def _fake_stream(**kwargs):

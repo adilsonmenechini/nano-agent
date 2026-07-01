@@ -42,7 +42,9 @@ def test_report_returns_string():
 
 
 def test_empty_registry_does_not_crash():
-    analyzer = HarnessAnalyzer(config=AgentConfig(), tool_registry=None, permission_manager=None)
+    analyzer = HarnessAnalyzer(
+        config=AgentConfig(), tool_registry=None, permission_manager=None
+    )
     snap = analyzer.snapshot()
     assert snap["tools"] == []
     assert snap["permissions"] == []

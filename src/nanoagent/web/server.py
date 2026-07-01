@@ -21,7 +21,9 @@ def create_app(
     app = web.Application()
 
     if static_dir is None:
-        static_dir = str(Path(__file__).resolve().parent.parent.parent.parent / "web-ui")
+        static_dir = str(
+            Path(__file__).resolve().parent.parent.parent.parent / "web-ui"
+        )
 
     static_path = Path(static_dir)
     if static_path.is_dir():
@@ -42,7 +44,9 @@ def create_app(
     return app
 
 
-def run_server(app: web.Application, host: str | None = None, port: int | None = None) -> None:
+def run_server(
+    app: web.Application, host: str | None = None, port: int | None = None
+) -> None:
     host = host or app.get(HOST, "0.0.0.0")
     port = port or app.get(PORT, 8080)
     web.run_app(app, host=host, port=port)

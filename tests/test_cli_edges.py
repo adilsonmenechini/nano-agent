@@ -1,15 +1,13 @@
 """Edge-case tests for CLI entry points and utility functions."""
+
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import click
 from click.testing import CliRunner
 
-import pytest
 
 from nanoagent.cli import (
     _build_system_prompt,
@@ -55,6 +53,7 @@ class TestCliUtilities:
 
     def test_print_full_help_no_raise(self):
         _print_full_help()
+
 
 class TestBuildSystemPrompt:
     def test_none_returns_none(self):
@@ -113,6 +112,11 @@ class TestHandleMemoryInsights:
     def test_with_memories(self):
         agent = MagicMock()
         r = MagicMock()
-        r.__getitem__ = lambda s, k: {"target": "memory", "cnt": 5, "oldest": 0, "newest": 100}[k]
+        r.__getitem__ = lambda s, k: {
+            "target": "memory",
+            "cnt": 5,
+            "oldest": 0,
+            "newest": 100,
+        }[k]
         agent.memory.conn.execute.return_value.fetchall.return_value = [r]
         _handle_memory_insights(agent)

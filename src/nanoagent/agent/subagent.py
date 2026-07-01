@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
@@ -89,7 +89,9 @@ class SubAgentManager:
 
         child = Agent(
             project_path=self._parent.project_path,
-            db_path=self._parent.memory.db_path if hasattr(self._parent.memory, "db_path") else None,
+            db_path=self._parent.memory.db_path
+            if hasattr(self._parent.memory, "db_path")
+            else None,
             llm_provider=self._llm_provider or self._parent.llm_provider,
         )
         _copy_tools(self._parent, child, task.tools)
@@ -148,8 +150,7 @@ class SubAgentManager:
         results: list[SubAgentResult | None] = [None] * len(tasks)
         with ThreadPoolExecutor(max_workers=min(len(tasks), 4)) as pool:
             fut_map = {
-                pool.submit(self._run_single, tasks[i]): i
-                for i in range(len(tasks))
+                pool.submit(self._run_single, tasks[i]): i for i in range(len(tasks))
             }
             for fut in as_completed(fut_map):
                 idx = fut_map[fut]

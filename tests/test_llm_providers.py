@@ -1,4 +1,5 @@
 """Tests for LLM provider error paths and edge branches."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -11,7 +12,9 @@ from nanoagent.llm.base import BaseLLMProvider, LLMResponse, StreamEvent, ToolCa
 
 class FakeProvider(BaseLLMProvider):
     def _chat(self, messages, tools=None, system_prompt=None, **kwargs):
-        return LLMResponse(content="ok", usage={"prompt_tokens": 5, "completion_tokens": 3})
+        return LLMResponse(
+            content="ok", usage={"prompt_tokens": 5, "completion_tokens": 3}
+        )
 
 
 class TestBaseLLMProvider:
@@ -37,6 +40,7 @@ class TestBaseLLMProvider:
         )
         with patch.object(p, "_chat", return_value=resp):
             import json as _json
+
             result = p.generate_with_tools("prompt", [{"type": "function"}])
             parsed = _json.loads(result)
             assert parsed[0]["id"] == "c1"
@@ -59,6 +63,7 @@ class TestBaseLLMProvider:
 class TestAnthropicProvider:
     def test_chat_success(self):
         from nanoagent.llm.anthropic import AnthropicProvider
+
         block = MagicMock()
         block.type = "text"
         block.text = "hi"
@@ -77,6 +82,7 @@ class TestAnthropicProvider:
 
     def test_chat_with_tool_use(self):
         from nanoagent.llm.anthropic import AnthropicProvider
+
         text_block = MagicMock()
         text_block.type = "text"
         text_block.text = "response"
@@ -100,6 +106,7 @@ class TestAnthropicProvider:
 
     def test_chat_api_error(self):
         from nanoagent.llm.anthropic import AnthropicProvider
+
         with patch("anthropic.Anthropic") as MockAnthropic:
             client = MagicMock()
             client.messages.create.side_effect = RuntimeError("upstream failure")
@@ -110,6 +117,7 @@ class TestAnthropicProvider:
 
     def test_chat_api_error_fallback(self):
         from nanoagent.llm.anthropic import AnthropicProvider
+
         with patch("anthropic.Anthropic") as MockAnthropic:
             client = MagicMock()
             client.messages.create.side_effect = anthropic.BadRequestError(
@@ -127,6 +135,7 @@ class TestAnthropicProvider:
 class TestLMStudioProvider:
     def test_chat_success(self):
         from nanoagent.llm.lmstudio import LMStudioProvider
+
         lp = LMStudioProvider("key", "url", "model")
         mc = MagicMock()
         choice = MagicMock()
@@ -142,6 +151,7 @@ class TestLMStudioProvider:
     def test_chat_bad_request_jinja(self):
         from nanoagent.llm.lmstudio import LMStudioProvider
         import openai
+
         lp = LMStudioProvider("key", "url", "model")
         err = openai.BadRequestError(
             message="jinja prompt template error",
@@ -156,6 +166,7 @@ class TestLMStudioProvider:
     def test_chat_bad_request_other(self):
         from nanoagent.llm.lmstudio import LMStudioProvider
         import openai
+
         lp = LMStudioProvider("key", "url", "model")
         err = openai.BadRequestError(
             message="other error",

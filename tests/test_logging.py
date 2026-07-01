@@ -1,4 +1,5 @@
 """Tests for AgentLogger."""
+
 import io
 
 from nanoagent.agent.logging import AgentLogger, LogLevel

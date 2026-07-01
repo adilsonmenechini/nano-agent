@@ -27,4 +27,8 @@ def test_dataset_builder_synthetic():
 def test_dataset_builder_synthetic_domain_matching():
     builder = DatasetBuilder()
     data = builder.build_synthetic("git_status", count=2)
-    assert all("git" in d.get("task_description", "").lower() or "commit" in d.get("task_description", "").lower() for d in data)
+    assert all(
+        "git" in d.get("task_description", "").lower()
+        or "commit" in d.get("task_description", "").lower()
+        for d in data
+    )

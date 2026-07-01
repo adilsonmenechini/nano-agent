@@ -30,6 +30,6 @@ class TestWebSocketChat(AioHTTPTestCase):
                 elif msg.type == web.WSMsgType.ERROR:
                     break
                 timeout = max(0, deadline - asyncio.get_event_loop().time())
-            types = [__import__('json').loads(m).get("type") for m in received]
+            types = [__import__("json").loads(m).get("type") for m in received]
             assert "agent_state_change" in types
             assert "message_complete" in types

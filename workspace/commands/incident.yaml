@@ -1,0 +1,95 @@
+# Incident Investigation Workflow
+# Use with: /incident <incident_id>
+#
+# Example:
+#   /incident INC-2024-07-15
+
+name: incident
+description: Investigate an incident, analyze logs, and generate a Root Cause Analysis
+arguments:
+  - name: incident_id
+    type: string
+    required: true
+    description: Incident identifier (e.g., INC-2024-07-15)
+  - name: service
+    type: string
+    required: false
+    description: Service name to scope the investigation
+steps:
+  - name: gather_context
+    description: Collecting incident metadata and recent changes
+    tool: run_shell
+    args:
+      command: |
+        echo "=== Incident {incident_id} ==="
+        echo "Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "=== Recent Git Changes ==="
+        git log --oneline -20 2>/dev/null || echo "Not a git repository"
+
+  - name: check_logs
+    description: Searching recent logs for error patterns
+    tool: run_shell
+    args:
+      command: |
+        if command -v kubectl &>/dev/null; then
+          kubectl logs --all-containers --since=1h 2>/dev/null | grep -i "error\|exception\|fail\|timeout\|crash" | tail -30 || echo "No critical errors found"
+        else
+          echo "kubectl not available — check logs manually"
+        fi
+
+  - name: analyze
+    description: Analyzing incident data and logs
+    prompt: |
+      You are investigating incident {incident_id}.
+
+      ## Context
+      {gather_context}
+
+      ## Logs
+      {check_logs}
+
+      Please provide:
+      1. **Timeline** of events
+      2. **Root cause** hypothesis
+      3. **Impact assessment** (users affected, services degraded)
+      4. **Recommendations** for immediate remediation
+      5. **Prevention** — how to avoid recurrence
+    depends_on:
+      - gather_context
+      - check_logs
+
+  - name: format_date
+    description: Getting current date for the report
+    tool: run_shell
+    args:
+      command: |
+        date -u +%Y-%m-%d
+    depends_on:
+      - analyze
+
+  - name: generate_rca
+    description: Generating Root Cause Analysis document
+    tool: write_file
+    args:
+      path: "incidents/{incident_id}-rca.md"
+      content: |
+        # Incident Report: {incident_id}
+
+        ## Overview
+        - **Date**: {format_date}
+        - **Severity**:
+        - **Duration**:
+        - **Services affected**:
+
+        ## Timeline
+        {analyze}
+
+        ## Root Cause
+
+        ## Resolution
+
+        ## Prevention
+
+        ## Action Items
+    depends_on:
+      - format_date

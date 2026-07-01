@@ -1,4 +1,5 @@
 """Tests for SkillsLoader, SkillContext, SkillWrapper."""
+
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -85,7 +86,9 @@ class TestSkillsLoader:
         with tempfile.TemporaryDirectory() as tmp:
             skill_dir = Path(tmp) / "test_skill"
             skill_dir.mkdir()
-            (skill_dir / "SKILL.md").write_text("---\nname: test_skill\ndescription: A test skill\n---")
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: test_skill\ndescription: A test skill\n---"
+            )
             loader = SkillsLoader([str(tmp)])
             assert "test_skill" in loader.names
 
@@ -93,7 +96,9 @@ class TestSkillsLoader:
         with tempfile.TemporaryDirectory() as tmp:
             skill_dir = Path(tmp) / "found_skill"
             skill_dir.mkdir()
-            (skill_dir / "SKILL.md").write_text("---\nname: found_skill\ndescription: found\n---")
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: found_skill\ndescription: found\n---"
+            )
             loader = SkillsLoader([str(tmp)])
             meta = loader.get("found_skill")
             assert meta is not None
@@ -107,7 +112,9 @@ class TestSkillsLoader:
         with tempfile.TemporaryDirectory() as tmp:
             skill_dir = Path(tmp) / "code_skill"
             skill_dir.mkdir()
-            (skill_dir / "SKILL.md").write_text("---\nname: code_skill\ndescription: code\n---\nprint('hello')")
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: code_skill\ndescription: code\n---\nprint('hello')"
+            )
             loader = SkillsLoader([str(tmp)])
             code = loader.load_content("code_skill")
             assert code is not None
@@ -121,7 +128,9 @@ class TestSkillsLoader:
         with tempfile.TemporaryDirectory() as tmp:
             skill_dir = Path(tmp) / "cat_skill"
             skill_dir.mkdir()
-            (skill_dir / "SKILL.md").write_text("---\nname: cat_skill\ndescription: catalog test\n---")
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: cat_skill\ndescription: catalog test\n---"
+            )
             loader = SkillsLoader([str(tmp)])
             catalog = loader.catalog
             assert "cat_skill" in catalog
@@ -132,7 +141,9 @@ class TestSkillsLoader:
             for name in ["skill_a", "skill_b"]:
                 d = Path(tmp) / name
                 d.mkdir()
-                (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: test\n---")
+                (d / "SKILL.md").write_text(
+                    f"---\nname: {name}\ndescription: test\n---"
+                )
             loader = SkillsLoader([str(tmp)])
             assert "skill_a" in loader.names
             assert "skill_b" in loader.names

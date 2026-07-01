@@ -1,8 +1,8 @@
 """Tests for TodoTool branch coverage."""
+
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
@@ -44,7 +44,18 @@ class TestTodoToolAdd:
         tool, path = tmp_tool
         # Pre-populate
         with open(path, "w") as f:
-            json.dump([{"id": 3, "task": "x", "completed": False, "priority": 1, "due_date": None}], f)
+            json.dump(
+                [
+                    {
+                        "id": 3,
+                        "task": "x",
+                        "completed": False,
+                        "priority": 1,
+                        "due_date": None,
+                    }
+                ],
+                f,
+            )
         result = tool.execute("add", task="new task")
         assert result == "Added todo: new task"
         with open(path) as f:
@@ -141,7 +152,18 @@ class TestTodoToolList:
         tool, path = tmp_tool
         # Write directly to bypass validation
         with open(path, "w") as f:
-            json.dump([{"id": 1, "task": "x", "completed": False, "priority": 99, "due_date": None}], f)
+            json.dump(
+                [
+                    {
+                        "id": 1,
+                        "task": "x",
+                        "completed": False,
+                        "priority": 99,
+                        "due_date": None,
+                    }
+                ],
+                f,
+            )
         result = tool.execute("list")
         assert "??" in result
 

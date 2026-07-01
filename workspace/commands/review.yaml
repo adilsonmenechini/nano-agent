@@ -1,0 +1,57 @@
+# Code Review Workflow
+# Use with: /review <path>
+#
+# Example:
+#   /review src/nanoagent/agent/agent.py
+#   /review src/nanoagent/web/handlers.py --full
+
+name: review
+description: Perform a comprehensive code review on a file or directory
+arguments:
+  - name: path
+    type: string
+    required: true
+    description: Path to the file or directory to review
+  - name: depth
+    type: string
+    required: false
+    description: "Review depth: quick or full (default: quick)"
+steps:
+  - name: read_source
+    description: Reading source file(s)
+    tool: read_file
+    args:
+      path: "{path}"
+
+  - name: check_git_history
+    description: Checking git history for context
+    tool: run_shell
+    args:
+      command: |
+        echo "=== Recent changes ==="
+        git log --oneline -10 -- "{path}" 2>/dev/null || echo "No git history"
+        echo "=== Current diff ==="
+        git diff -- "{path}" 2>/dev/null | head -50
+
+  - name: review_analysis
+    description: Performing code review
+    prompt: |
+      Review the following code at path "{path}":
+
+      ## Source Code
+      {read_source}
+
+      ## Git Context
+      {check_git_history}
+
+      Provide a structured review covering:
+      1. **Architecture** — Is the code well-structured and following patterns?
+      2. **Correctness** — Are there any bugs or edge cases?
+      3. **Security** — Any security concerns (injection, auth, data exposure)?
+      4. **Performance** — Any obvious performance issues?
+      5. **Maintainability** — Is the code readable and well-documented?
+      6. **Type Safety** — Are types used correctly?
+      7. **Recommendations** — Top 3 improvements with rationale
+    depends_on:
+      - read_source
+      - check_git_history

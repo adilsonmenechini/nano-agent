@@ -144,7 +144,7 @@ class ChatPanel {
     this.scrollToBottom();
   }
 
-  startAgentMessage(messageId) {
+  startAgentMessage(messageId, agentName) {
     const prevId = this.currentMessageId;
     if (prevId && prevId !== messageId) this.completeAgentMessage();
 
@@ -156,10 +156,13 @@ class ChatPanel {
     const div = document.createElement('div');
     div.className = 'message agent streaming';
     div.dataset.messageId = messageId;
+    if (agentName) {
+      div.dataset.agentName = agentName;
+    }
 
     const header = document.createElement('div');
     header.className = 'message-header';
-    header.textContent = 'NanoAgent';
+    header.textContent = agentName ? `NanoAgent [@${agentName}]` : 'NanoAgent';
 
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';

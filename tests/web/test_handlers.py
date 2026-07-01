@@ -23,6 +23,7 @@ class TestSessionsHandlers(AioHTTPTestCase):
         self._mock_agent.memory.load_session.return_value = None
         self._mock_agent.memory.save_session.return_value = None
         import nanoagent.web.handlers as handlers
+
         self._orig_get_agent = handlers._get_agent
         handlers._get_agent = lambda: self._mock_agent
         app = web.Application()
@@ -34,6 +35,7 @@ class TestSessionsHandlers(AioHTTPTestCase):
 
     async def tearDown(self):
         import nanoagent.web.handlers as handlers
+
         handlers._get_agent = self._orig_get_agent
         await super().tearDown()
 
@@ -66,6 +68,7 @@ class TestSkillsHandlers(AioHTTPTestCase):
         self._mock_agent.skill_storage.list_skills.return_value = []
         self._mock_agent.skills = {}
         import nanoagent.web.handlers as handlers
+
         self._orig_get_agent = handlers._get_agent
         handlers._get_agent = lambda: self._mock_agent
         app = web.Application()
@@ -75,6 +78,7 @@ class TestSkillsHandlers(AioHTTPTestCase):
 
     async def tearDown(self):
         import nanoagent.web.handlers as handlers
+
         handlers._get_agent = self._orig_get_agent
         await super().tearDown()
 

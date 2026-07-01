@@ -36,19 +36,23 @@ class DiagnosticsCollector:
     def record_tool_call(self, name: str, duration: float, success: bool) -> None:
         if not self._enabled:
             return
-        self._tool_calls.append({
-            "name": name,
-            "duration": duration,
-            "success": success,
-        })
+        self._tool_calls.append(
+            {
+                "name": name,
+                "duration": duration,
+                "success": success,
+            }
+        )
 
     def record_health(self, health_score: float, health_level: str) -> None:
         if not self._enabled:
             return
-        self._health_snapshots.append({
-            "score": health_score,
-            "level": health_level,
-        })
+        self._health_snapshots.append(
+            {
+                "score": health_score,
+                "level": health_level,
+            }
+        )
 
     def record_healing(self, action: dict[str, Any]) -> None:
         if not self._enabled:
@@ -65,7 +69,9 @@ class DiagnosticsCollector:
             phase_timings=dict(self._phase_timings),
             tool_calls=list(self._tool_calls),
             health_snapshots=list(self._health_snapshots),
-            stability_report=dict(self._stability_report) if self._stability_report else None,
+            stability_report=dict(self._stability_report)
+            if self._stability_report
+            else None,
             healing_actions=list(self._healing_actions),
             stop_reason=stop_reason.value if stop_reason else "",
             total_duration=sum(self._phase_timings.values()),

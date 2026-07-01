@@ -23,7 +23,14 @@ class TestPhase:
         assert Phase.RESPOND.value == "respond"
 
     def test_ordered_values(self):
-        expected = [Phase.IDLE, Phase.RECEIVE, Phase.EXPLORE, Phase.EXECUTE, Phase.VERIFY, Phase.RESPOND]
+        expected = [
+            Phase.IDLE,
+            Phase.RECEIVE,
+            Phase.EXPLORE,
+            Phase.EXECUTE,
+            Phase.VERIFY,
+            Phase.RESPOND,
+        ]
         assert list(Phase) == expected
 
 

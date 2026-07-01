@@ -17,7 +17,9 @@ class GeptOptimizer:
         best_variant = skill_code
         best_fitness = baseline
         for variant in variants:
-            constraints = self.validator.validate(variant, "skill", baseline_text=skill_code)
+            constraints = self.validator.validate(
+                variant, "skill", baseline_text=skill_code
+            )
             if not all(c["passed"] for c in constraints):
                 continue
             score = self.fitness.evaluate(variant, eval_dataset)
@@ -48,6 +50,7 @@ class GeptOptimizer:
             words = desc_line.split()
             if len(words) > 3:
                 import random
+
                 i = random.randint(2, len(words) - 1)
                 words[i] = words[i].upper()
                 lines[2] = " ".join(words)

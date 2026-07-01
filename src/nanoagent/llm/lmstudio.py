@@ -11,7 +11,9 @@ from .base import BaseLLMProvider, LLMResponse, ToolCall
 class LMStudioProvider(BaseLLMProvider):
     def __init__(self, api_key: str, base_url: str, model: str, timeout: float = 120.0):
         super().__init__(api_key, base_url, model, timeout)
-        self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=timeout)
+        self.client = openai.OpenAI(
+            api_key=self.api_key, base_url=self.base_url, timeout=timeout
+        )
 
     def generate(self, prompt: str, **kwargs) -> str:
         try:

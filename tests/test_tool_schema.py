@@ -1,7 +1,7 @@
 """Tests for type-to-JSON-schema conversion and Tool class."""
+
 from __future__ import annotations
 
-import typing
 from typing import Any, Optional, Union
 
 from nanoagent.tool import Tool, infer_parameters_schema, py_to_json_schema, tool
@@ -57,6 +57,7 @@ class TestPyToJsonSchema:
 
     def test_literal(self):
         from typing import Literal
+
         result = py_to_json_schema(Literal["red", "green", "blue"])
         assert result["type"] == "string"
         assert result["enum"] == ["red", "green", "blue"]
@@ -64,6 +65,7 @@ class TestPyToJsonSchema:
     def test_fallback_unknown_type(self):
         class CustomType:
             pass
+
         result = py_to_json_schema(CustomType)
         assert result == {}
 
@@ -128,6 +130,7 @@ class TestInferParametersSchema:
     def test_basic_params(self):
         def fn(name: str, age: int) -> None:
             pass
+
         schema = infer_parameters_schema(fn)
         assert schema["type"] == "object"
         assert "name" in schema["properties"]
@@ -137,6 +140,7 @@ class TestInferParametersSchema:
     def test_params_with_defaults(self):
         def fn(name: str, age: int = 18) -> None:
             pass
+
         schema = infer_parameters_schema(fn)
         assert "age" not in (schema.get("required") or [])
         assert "default" in schema["properties"]["age"]
@@ -144,6 +148,7 @@ class TestInferParametersSchema:
     def test_skips_return_and_private(self):
         def fn(x: int, _secret: str = "hidden") -> str:
             return str(x)
+
         schema = infer_parameters_schema(fn)
         assert "x" in schema["properties"]
         assert "_secret" not in schema["properties"]
@@ -151,6 +156,7 @@ class TestInferParametersSchema:
     def test_empty_function(self):
         def fn() -> None:
             pass
+
         schema = infer_parameters_schema(fn)
         assert schema["type"] == "object"
 
@@ -164,6 +170,7 @@ class TestToolEdgeCases:
         @tool
         def add(a: int, b: int) -> int:
             return a + b
+
         assert isinstance(add.parameters, dict)
         assert "a" in add.parameters["properties"]
         assert "b" in add.parameters["properties"]

@@ -41,7 +41,9 @@ class PermissionManager:
     def __init__(self, default_mode: str = "allow"):
         self.rules: list[PermissionRule] = []
         if default_mode not in ("allow", "deny"):
-            raise ValueError(f"default_mode must be 'allow' or 'deny', got {default_mode!r}")
+            raise ValueError(
+                f"default_mode must be 'allow' or 'deny', got {default_mode!r}"
+            )
         self.default_mode = PermissionMode(default_mode)
 
     def add_rule(self, rule: PermissionRule) -> None:
@@ -119,12 +121,14 @@ class PermissionManager:
                 continue
             if match_type not in ("exact", "prefix", "regex"):
                 match_type = "exact"
-            pm.add_rule(PermissionRule(
-                tool_name=tool_name,
-                match_type=match_type,  # type: ignore[arg-type]
-                pattern=pattern,
-                mode=mode,
-            ))
+            pm.add_rule(
+                PermissionRule(
+                    tool_name=tool_name,
+                    match_type=match_type,  # type: ignore[arg-type]
+                    pattern=pattern,
+                    mode=mode,
+                )
+            )
         return pm
 
 

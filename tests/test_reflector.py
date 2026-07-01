@@ -51,7 +51,9 @@ def test_get_by_turn_id_missing(reflector):
 
 
 def test_search_matches_keyword(reflector):
-    reflector.reflect(turn_id="t1", task_description="list python files", duration_ms=10)
+    reflector.reflect(
+        turn_id="t1", task_description="list python files", duration_ms=10
+    )
     reflector.reflect(turn_id="t2", task_description="count lines", duration_ms=20)
     results = reflector.search("python", limit=10)
     assert len(results) == 1

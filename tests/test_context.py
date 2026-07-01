@@ -1,4 +1,5 @@
 """Tests for token counting, context truncation, and memory selection."""
+
 from nanoagent.agent.context import (
     _estimate_tokens,
     count_messages_tokens,
@@ -53,7 +54,9 @@ class TestCountMessagesTokens:
         assert total > 1
 
     def test_messages_with_lists(self):
-        msgs = [{"role": "assistant", "content": [{"text": "hello"}, {"text": "world"}]}]
+        msgs = [
+            {"role": "assistant", "content": [{"text": "hello"}, {"text": "world"}]}
+        ]
         assert count_messages_tokens(msgs) > 1
 
     def test_messages_with_non_string_values(self):
@@ -71,13 +74,15 @@ class TestTruncateMessages:
         long_msg = {"role": "user", "content": "hello " * 500}
         msgs = [{"role": "system", "content": "keep me"}, long_msg]
         result = truncate_messages(msgs, max_tokens=50)
-        assert len(result) < len(msgs) or all(
-            m.get("role") == "system" for m in result
-        )
+        assert len(result) < len(msgs) or all(m.get("role") == "system" for m in result)
 
     def test_preserves_system_message(self):
         sys_msg = {"role": "system", "content": "important"}
-        msgs = [sys_msg, {"role": "user", "content": "hello"}, {"role": "assistant", "content": "world"}]
+        msgs = [
+            sys_msg,
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ]
         result = truncate_messages(msgs, max_tokens=1)
         assert any(m.get("role") == "system" for m in result)
 

@@ -1,12 +1,11 @@
 import os
 import tempfile
-from pathlib import Path
 
-import pytest
 
 
 def test_config_defaults():
     from nanoagent.config import AgentConfig
+
     config = AgentConfig(config_path="/nonexistent/config.toml")
     assert config.max_tokens == 4096
     assert config.temperature == 0.7
@@ -17,9 +16,11 @@ def test_config_defaults():
 
 def test_config_env_var_overrides_default():
     import os
+
     os.environ["NANOAGENT_MAX_TOKENS"] = "512"
     try:
         from nanoagent.config import AgentConfig
+
         config = AgentConfig(config_path="/nonexistent/config.toml")
         assert config.max_tokens == 512
     finally:
@@ -38,6 +39,7 @@ stream = false
         tmp_path = f.name
     try:
         from nanoagent.config import AgentConfig
+
         config = AgentConfig(config_path=tmp_path)
         assert config.max_tokens == 2048
         assert config.temperature == 0.5
@@ -59,6 +61,7 @@ stream = false
     os.environ["NANOAGENT_STREAM"] = "true"
     try:
         from nanoagent.config import AgentConfig
+
         config = AgentConfig(config_path=tmp_path)
         assert config.max_tokens == 500
         assert config.stream is True
@@ -70,7 +73,10 @@ stream = false
 
 def test_missing_config_file_not_an_error():
     from nanoagent.config import AgentConfig
-    config = AgentConfig(config_path="/tmp/__nonexistent_nanoagent_config__/config.toml")
+
+    config = AgentConfig(
+        config_path="/tmp/__nonexistent_nanoagent_config__/config.toml"
+    )
     assert config.max_tokens == 4096
     assert config.providers is not None
 
@@ -86,6 +92,7 @@ model = "gpt-4o-mini"
         tmp_path = f.name
     try:
         from nanoagent.config import AgentConfig
+
         config = AgentConfig(config_path=tmp_path)
         openai_cfg = config.get_provider_config("openai")
         assert openai_cfg is not None

@@ -15,9 +15,8 @@ Usage:
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -78,7 +77,9 @@ def _resolve_args(
             resolved[key] = _resolve_args(val, step_results)
         elif isinstance(val, list):
             resolved[key] = [
-                _resolve_templates(item, step_results) if isinstance(item, str) else item
+                _resolve_templates(item, step_results)
+                if isinstance(item, str)
+                else item
                 for item in val
             ]
         else:
@@ -218,7 +219,6 @@ class ToolPipeline:
     ) -> dict[str, str]:
         """Execute steps with parallel execution where dependencies allow."""
         remaining = {s.name: s for s in sorted_steps}
-        step_by_name = {s.name: s for s in sorted_steps}
 
         while remaining:
             # Find steps whose dependencies are all satisfied

@@ -31,7 +31,10 @@ class BackgroundLearner:
             return False
         turn_delta = current_turn_count - self._last_cycle_turn
         time_delta = time.time() - self._last_cycle_time
-        if turn_delta >= self.cycle_interval_turns or time_delta >= self.cycle_interval_seconds:
+        if (
+            turn_delta >= self.cycle_interval_turns
+            or time_delta >= self.cycle_interval_seconds
+        ):
             return True
         return False
 
@@ -55,6 +58,7 @@ class BackgroundLearner:
         if patterns:
             try:
                 from nanoagent.learning.synthesizer import Synthesizer
+
                 synthesizer = Synthesizer(self.store)
                 proposals_created = len(synthesizer.check_for_proposals())
             except Exception:

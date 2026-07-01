@@ -97,11 +97,15 @@ class ProgressController:
         oscillation_score = self._compute_oscillation_score(recent)
 
         action = self._decide_action(health_level, stall_score, oscillation_score)
-        reason = self._compute_reason(action, health_score, stall_score, oscillation_score)
+        reason = self._compute_reason(
+            action, health_score, stall_score, oscillation_score
+        )
 
         healing_action = None
         if self._healing_engine is not None and self._detected_faults:
-            healing_action = self._healing_engine.handle_fault(self._detected_faults[-1])
+            healing_action = self._healing_engine.handle_fault(
+                self._detected_faults[-1]
+            )
 
         return ProgressDecision(
             action=action,
@@ -117,7 +121,7 @@ class ProgressController:
     def _compute_stall_score(self, recent: list[ProgressSignal]) -> float:
         if len(recent) < self._stall_threshold:
             return 0.0
-        last_n = recent[-self._stall_threshold:]
+        last_n = recent[-self._stall_threshold :]
         total_output_changes = sum(s.output_changes for s in last_n)
         if total_output_changes == 0:
             return 1.0
@@ -126,7 +130,7 @@ class ProgressController:
     def _compute_oscillation_score(self, recent: list[ProgressSignal]) -> float:
         if len(recent) < self._oscillation_window:
             return 0.0
-        last_n = recent[-self._oscillation_window:]
+        last_n = recent[-self._oscillation_window :]
         tool_call_counts = [s.tool_calls for s in last_n]
         if len(set(tool_call_counts)) == 1 and len(tool_call_counts) >= 3:
             return 1.0

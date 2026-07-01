@@ -21,7 +21,10 @@ class Synthesizer:
         if existing:
             return None
         name = self._generate_name(tool_names)
-        description = pattern.recommended_approach or f"Run {', '.join(tool_names)} based on learned pattern"
+        description = (
+            pattern.recommended_approach
+            or f"Run {', '.join(tool_names)} based on learned pattern"
+        )
         code = self._generate_code(tool_names, description)
         try:
             skill_id = self.skill_storage.add_skill(
@@ -56,8 +59,12 @@ class Synthesizer:
             d = dict(row)
             pattern = ExperiencePattern(
                 id=d["id"],
-                trigger_context=json.loads(d["trigger_context"]) if isinstance(d["trigger_context"], str) else d["trigger_context"],
-                tool_sequence=json.loads(d["tool_sequence"]) if isinstance(d["tool_sequence"], str) else d["tool_sequence"],
+                trigger_context=json.loads(d["trigger_context"])
+                if isinstance(d["trigger_context"], str)
+                else d["trigger_context"],
+                tool_sequence=json.loads(d["tool_sequence"])
+                if isinstance(d["tool_sequence"], str)
+                else d["tool_sequence"],
                 recommended_approach=d["recommended_approach"],
                 success_count=d["success_count"],
                 failure_count=d["failure_count"],
@@ -73,7 +80,8 @@ class Synthesizer:
 
     def get_pending_proposals(self) -> list[dict]:
         return [
-            s for s in self.skill_storage.list_skills()
+            s
+            for s in self.skill_storage.list_skills()
             if s.get("status") == SkillStatus.PROPOSED.value
         ]
 

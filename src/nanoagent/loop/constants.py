@@ -99,7 +99,9 @@ class LoopConfig:
             msg = f"tool_timeout_seconds must be positive, got {self.tool_timeout_seconds}"
             raise ValueError(msg)
         if self.llm_timeout_seconds <= 0:
-            msg = f"llm_timeout_seconds must be positive, got {self.llm_timeout_seconds}"
+            msg = (
+                f"llm_timeout_seconds must be positive, got {self.llm_timeout_seconds}"
+            )
             raise ValueError(msg)
         if self.stall_threshold < 1:
             msg = f"stall_threshold must be >= 1, got {self.stall_threshold}"
@@ -108,7 +110,9 @@ class LoopConfig:
             msg = f"oscillation_window must be >= 2, got {self.oscillation_window}"
             raise ValueError(msg)
         if not (0.0 <= self.compaction_threshold <= 1.0):
-            msg = f"compaction_threshold must be 0.0-1.0, got {self.compaction_threshold}"
+            msg = (
+                f"compaction_threshold must be 0.0-1.0, got {self.compaction_threshold}"
+            )
             raise ValueError(msg)
         if self.health_window_size < 5:
             msg = f"health_window_size must be >= 5, got {self.health_window_size}"
@@ -135,7 +139,9 @@ class HealingAction:
     execution_time: float = 0.0
     success: bool = False
     side_effects: list[str] = field(default_factory=list)
-    effectiveness_tracking: dict[str, int] = field(default_factory=lambda: {
-        "execution_count": 0,
-        "success_count": 0,
-    })
+    effectiveness_tracking: dict[str, int] = field(
+        default_factory=lambda: {
+            "execution_count": 0,
+            "success_count": 0,
+        }
+    )

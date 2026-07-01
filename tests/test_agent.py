@@ -2,7 +2,6 @@ import pytest
 import tempfile
 import os
 from nanoagent.agent import Agent
-from nanoagent.config import AgentConfig
 from nanoagent.agent.errors import (
     AgentError,
     ProviderError,
@@ -362,12 +361,14 @@ def test_state_transition_error_raised():
 
 def test_logger_verbosity():
     from nanoagent.agent.logging import AgentLogger, LogLevel
+
     logger = AgentLogger(name="test-logger", level=LogLevel.WARNING)
     assert logger.level == LogLevel.WARNING
 
 
 def test_logger_get_or_create():
     from nanoagent.agent.logging import AgentLogger
+
     logger = AgentLogger.get("unique-test-logger")
     assert logger is not None
     same = AgentLogger.get("unique-test-logger")
@@ -376,6 +377,7 @@ def test_logger_get_or_create():
 
 def test_logger_configure():
     from nanoagent.agent.logging import AgentLogger, LogLevel
+
     logger = AgentLogger.configure(verbosity=2)
     assert logger.level == LogLevel.DEBUG
     logger2 = AgentLogger.configure(verbosity=0)
@@ -387,12 +389,14 @@ def test_logger_configure():
 
 def test_count_tokens_short_text():
     from nanoagent.agent.context import count_tokens
+
     count = count_tokens("Hello, world!")
     assert count > 0
 
 
 def test_count_tokens_different_providers():
     from nanoagent.agent.context import count_tokens
+
     count1 = count_tokens("Hello, world!", provider="openai")
     count2 = count_tokens("Hello, world!", provider="anthropic")
     assert count1 == count2
@@ -400,6 +404,7 @@ def test_count_tokens_different_providers():
 
 def test_truncate_messages_within_limit():
     from nanoagent.agent.context import truncate_messages
+
     msgs = [{"role": "user", "content": "Hi"}]
     result = truncate_messages(msgs, max_tokens=1000)
     assert len(result) == 1
@@ -407,6 +412,7 @@ def test_truncate_messages_within_limit():
 
 def test_truncate_messages_removes_old():
     from nanoagent.agent.context import truncate_messages
+
     msgs = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "First message that is long enough to test with"},
@@ -423,6 +429,7 @@ def test_truncate_messages_removes_old():
 def test_max_tokens_param_passed_to_provider():
     import unittest.mock
     from nanoagent.llm.base import LLMResponse
+
     agent = Agent(db_path=":memory:")
     mock_llm = unittest.mock.MagicMock()
     mock_llm.chat.return_value = LLMResponse(content="OK")
@@ -437,6 +444,7 @@ def test_max_tokens_param_passed_to_provider():
 def test_temperature_param_passed_to_provider():
     import unittest.mock
     from nanoagent.llm.base import LLMResponse
+
     agent = Agent(db_path=":memory:")
     mock_llm = unittest.mock.MagicMock()
     mock_llm.chat.return_value = LLMResponse(content="OK")
@@ -452,6 +460,7 @@ def test_retry_recovery_on_retryable_error():
     import unittest.mock
     from nanoagent.llm.base import LLMResponse
     from nanoagent.agent.errors import ProviderRetryableError
+
     agent = Agent(db_path=":memory:")
     agent.retry_attempts = 3
     mock_llm = unittest.mock.MagicMock()
@@ -470,6 +479,7 @@ def test_retry_recovery_on_retryable_error():
 def test_retry_exhaustion_raises():
     import unittest.mock
     from nanoagent.agent.errors import ProviderRetryableError
+
     agent = Agent(db_path=":memory:")
     agent.retry_attempts = 2
     mock_llm = unittest.mock.MagicMock()
@@ -483,18 +493,24 @@ def test_retry_exhaustion_raises():
 def test_parallel_tool_execution():
     import unittest.mock
     from nanoagent.llm.base import LLMResponse, ToolCall
+
     agent = Agent(db_path=":memory:")
+
     class MockTool:
         description = "A mock tool"
+
         def execute(self, **kw):
             return f"result: {kw}"
+
     agent.register_tool("tool_a", MockTool())
     agent.register_tool("tool_b", MockTool())
     mock_llm = unittest.mock.MagicMock()
-    response_1 = LLMResponse(tool_calls=[
-        ToolCall(id="t1", name="tool_a", arguments={"x": 1}),
-        ToolCall(id="t2", name="tool_b", arguments={"y": 2}),
-    ])
+    response_1 = LLMResponse(
+        tool_calls=[
+            ToolCall(id="t1", name="tool_a", arguments={"x": 1}),
+            ToolCall(id="t2", name="tool_b", arguments={"y": 2}),
+        ]
+    )
     response_2 = LLMResponse(content="Final response")
     mock_llm.chat.side_effect = [response_1, response_2]
     agent.llm_provider = mock_llm
@@ -504,19 +520,22 @@ def test_parallel_tool_execution():
     assert len(tool_messages) == 2
     agent.memory.close()
 
+
 def test_agent_loop_config():
     agent = Agent(db_path=":memory:")
-    assert hasattr(agent, 'loop_config')
+    assert hasattr(agent, "loop_config")
     assert agent.loop_config is not None
     assert agent.loop_config.llm_timeout_seconds == 120.0
     assert agent.loop_config.tool_timeout_seconds == 30.0
     agent.memory.close()
 
+
 def test_agent_loop_config_from_toml():
     import tempfile
     import os
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
-        f.write('''
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+        f.write("""
 [agent]
 default_provider = "openai"
 project_path = "/tmp"
@@ -535,7 +554,7 @@ mode = "deny"
 [[tools.permissions.rules]]
 tool_name = "*"
 mode = "allow"
-''')
+""")
         temp_path = f.name
     try:
         agent = Agent(db_path=":memory:", config_path=temp_path)

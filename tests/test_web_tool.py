@@ -1,9 +1,9 @@
 """Tests for WebTool URL validation and dispatch."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from nanoagent.agent.tools.web_tool import WebTool, _validate_url
 
@@ -50,17 +50,25 @@ class TestWebToolWebSearch:
             assert "No results" in result
 
     def test_search_http_query_routes_through_validation(self):
-        with patch("ddgs.DDGS", side_effect=RuntimeError("should not reach ddgs")), \
-             patch("nanoagent.agent.tools.web_tool._validate_url",
-                   return_value=(False, "Blocked hostname: localhost")):
+        with (
+            patch("ddgs.DDGS", side_effect=RuntimeError("should not reach ddgs")),
+            patch(
+                "nanoagent.agent.tools.web_tool._validate_url",
+                return_value=(False, "Blocked hostname: localhost"),
+            ),
+        ):
             r = WebTool().execute("web_search", query="http://localhost/x")
             assert "validation failed" in r.lower()
 
 
 class TestWebToolWebFetch:
-    def _make_resp(self, ctype="text/html",
-                   text="<html><body><p>hi</p></body></html>",
-                   url="https://example.com", json_body=None):
+    def _make_resp(
+        self,
+        ctype="text/html",
+        text="<html><body><p>hi</p></body></html>",
+        url="https://example.com",
+        json_body=None,
+    ):
         resp = MagicMock()
         resp.headers = {"content-type": ctype}
         resp.text = text
@@ -84,16 +92,24 @@ class TestWebToolWebFetch:
     def test_fetch_json_response(self):
         payload = {"key": "val", "n": 42}
         resp = self._make_resp(ctype="application/json", json_body=payload)
-        with self._patch_httpx(resp), \
-             patch("nanoagent.agent.tools.web_tool._validate_url", return_value=(True, "")):
+        with (
+            self._patch_httpx(resp),
+            patch(
+                "nanoagent.agent.tools.web_tool._validate_url", return_value=(True, "")
+            ),
+        ):
             result = WebTool().execute("web_fetch", url="https://api.example.com/d")
             data = __import__("json").loads(result)
             assert data["status"] == 200
 
     def test_fetch_plain_text_response(self):
         resp = self._make_resp(ctype="text/plain", text="plain text here")
-        with self._patch_httpx(resp), \
-             patch("nanoagent.agent.tools.web_tool._validate_url", return_value=(True, "")):
+        with (
+            self._patch_httpx(resp),
+            patch(
+                "nanoagent.agent.tools.web_tool._validate_url", return_value=(True, "")
+            ),
+        ):
             result = WebTool().execute("web_fetch", url="https://example.com/x")
             data = __import__("json").loads(result)
             assert data["status"] == 200
@@ -105,10 +121,16 @@ class TestWebToolWebFetch:
         fake_doc = MagicMock()
         fake_doc.summary.return_value = big
         fake_doc.title.return_value = None
-        with self._patch_httpx(resp), \
-             patch("nanoagent.agent.tools.web_tool._validate_url", return_value=(True, "")), \
-             patch("readability.Document", return_value=fake_doc):
-            result = WebTool().execute("web_fetch", url="https://example.com/big", max_chars=100)
+        with (
+            self._patch_httpx(resp),
+            patch(
+                "nanoagent.agent.tools.web_tool._validate_url", return_value=(True, "")
+            ),
+            patch("readability.Document", return_value=fake_doc),
+        ):
+            result = WebTool().execute(
+                "web_fetch", url="https://example.com/big", max_chars=100
+            )
             data = __import__("json").loads(result)
             assert data["truncated"] is True
             assert len(data["text"]) <= 100
@@ -144,6 +166,10 @@ class TestValidateUrl:
         assert ok is False
 
     def test_aws_metadata_blocked(self):
-        for h in ("metadata.google.internal", "metadata.aws.internal", "metadata.azure.com"):
+        for h in (
+            "metadata.google.internal",
+            "metadata.aws.internal",
+            "metadata.azure.com",
+        ):
             ok, msg = _validate_url(f"http://{h}/")
             assert ok is False

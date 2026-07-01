@@ -78,7 +78,8 @@ class HealingEngine:
 
     def handle_fault(self, fault: FaultRecord) -> HealingAction | None:
         candidates = [
-            s for s in self._strategies.values()
+            s
+            for s in self._strategies.values()
             if s.applies_to and fault.fault_type in s.applies_to
         ]
         if not candidates:

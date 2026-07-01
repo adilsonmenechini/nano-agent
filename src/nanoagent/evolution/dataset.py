@@ -20,16 +20,40 @@ class DatasetBuilder:
     def build_synthetic(self, skill_domain: str, count: int = 10) -> list[dict]:
         examples = {
             "file": [
-                {"task_description": "List all files in directory", "expected_tools": ["run_shell", "glob_file"], "outcome": "success"},
-                {"task_description": "Read configuration file", "expected_tools": ["read_file"], "outcome": "success"},
+                {
+                    "task_description": "List all files in directory",
+                    "expected_tools": ["run_shell", "glob_file"],
+                    "outcome": "success",
+                },
+                {
+                    "task_description": "Read configuration file",
+                    "expected_tools": ["read_file"],
+                    "outcome": "success",
+                },
             ],
             "git": [
-                {"task_description": "Check git status", "expected_tools": ["git_status", "git_diff"], "outcome": "success"},
-                {"task_description": "View recent commits", "expected_tools": ["git_log"], "outcome": "success"},
+                {
+                    "task_description": "Check git status",
+                    "expected_tools": ["git_status", "git_diff"],
+                    "outcome": "success",
+                },
+                {
+                    "task_description": "View recent commits",
+                    "expected_tools": ["git_log"],
+                    "outcome": "success",
+                },
             ],
             "search": [
-                {"task_description": "Find files containing pattern", "expected_tools": ["grep_file"], "outcome": "success"},
-                {"task_description": "Search for function definition", "expected_tools": ["grep_file", "read_file"], "outcome": "success"},
+                {
+                    "task_description": "Find files containing pattern",
+                    "expected_tools": ["grep_file"],
+                    "outcome": "success",
+                },
+                {
+                    "task_description": "Search for function definition",
+                    "expected_tools": ["grep_file", "read_file"],
+                    "outcome": "success",
+                },
             ],
         }
         domain_key = "file"

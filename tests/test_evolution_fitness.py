@@ -12,8 +12,16 @@ def test_fitness_empty_dataset():
 def test_fitness_all_success():
     fitness = SkillFitness()
     dataset = [
-        {"task_description": "do X", "expected_tools": ["run_shell"], "outcome": "success"},
-        {"task_description": "do Y", "expected_tools": ["read_file"], "outcome": "success"},
+        {
+            "task_description": "do X",
+            "expected_tools": ["run_shell"],
+            "outcome": "success",
+        },
+        {
+            "task_description": "do Y",
+            "expected_tools": ["read_file"],
+            "outcome": "success",
+        },
     ]
     score = fitness.evaluate("run_shell code", dataset)
     assert score["success_rate"] > 0

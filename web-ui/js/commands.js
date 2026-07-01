@@ -70,6 +70,14 @@ class CommandRouter {
         chat.addSystemMessage('Operation cancelled.');
         return true;
 
+      case '/agents':
+        await this._handleAgents(chat);
+        return true;
+
+      case '/commands':
+        await this._handleCommands(chat);
+        return true;
+
       case '/memory':
         await this._handleMemory(args, chat);
         return true;
@@ -94,7 +102,10 @@ class CommandRouter {
       { cmd: '/tools', desc: 'List registered tools' },
       { cmd: '/skills', desc: 'List loaded skills' },
       { cmd: '/cancel', desc: 'Cancel the current response' },
-      { cmd: '/memory', desc: 'Memory commands: search, insights, consolidate, forget' },
+      { cmd: '/memory', desc: 'Memory: search, insights, consolidate, forget' },
+      { cmd: '/agents', desc: 'List workspace agents' },
+      { cmd: '/commands', desc: 'List workspace commands' },
+      { cmd: '@agent <prompt>', desc: 'Use a specialized agent' },
       { cmd: '!<command>', desc: 'Run a shell command' },
     ];
 
@@ -335,6 +346,70 @@ class CommandRouter {
     } else {
       const key = args.trim();
       chat.addSystemMessage(`Memory deletion by key '${key}' is not available in the web UI. Use the CLI.`);
+    }
+  }
+
+  // ─── Agents ──────────────────────────────────────────────────────────
+
+  async _handleAgents(chat) {
+    try {
+      const resp = await fetch('/api/agents');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const agents = data.agents || [];
+
+      if (agents.length === 0) {
+        chat.addSystemMessage('No workspace agents loaded.');
+        return;
+      }
+
+      let html = `<strong>Workspace Agents (${agents.length})</strong><br><br>`;
+      html += '<table style="width:100%; border-collapse: collapse;">';
+      for (const a of agents) {
+        const desc = (a.description || '—').slice(0, 100);
+        html += `<tr><td style="padding: 6px 12px 6px 0; font-family: monospace; color: #8b5cf6; white-space: nowrap;">@${this._escapeHtml(a.name)}</td><td style="padding: 6px 0; color: #9ca3af;">${this._escapeHtml(desc)}</td></tr>`;
+      }
+      html += '</table>';
+      html += '<br><div style="color: #6b7280; font-size: 12px;">Use @agent-name &lt;prompt&gt; to invoke a specialized agent</div>';
+
+      chat.addCommandMessage('agents', html);
+    } catch (e) {
+      chat.addSystemMessage(`Error loading agents: ${e.message}`);
+    }
+  }
+
+  // ─── Commands List ────────────────────────────────────────────────────
+
+  async _handleCommands(chat) {
+    try {
+      const resp = await fetch('/api/commands');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const cmds = data.commands || [];
+
+      if (cmds.length === 0) {
+        chat.addSystemMessage('No workspace commands loaded.');
+        return;
+      }
+
+      let html = `<strong>Workspace Commands (${cmds.length})</strong><br><br>`;
+      html += '<table style="width:100%; border-collapse: collapse;">';
+      for (const c of cmds) {
+        const desc = (c.description || '—').slice(0, 100);
+        let usage = `/${c.name}`;
+        if (c.arguments && c.arguments.length > 0) {
+          for (const arg of c.arguments) {
+            usage += arg.required ? ` &lt;${arg.name}&gt;` : ` [${arg.name}]`;
+          }
+        }
+        html += `<tr><td style="padding: 6px 12px 6px 0; font-family: monospace; color: #fbbf24; white-space: nowrap;">${this._escapeHtml(usage)}</td><td style="padding: 6px 0; color: #9ca3af;">${this._escapeHtml(desc)}</td></tr>`;
+      }
+      html += '</table>';
+      html += '<br><div style="color: #6b7280; font-size: 12px;">Use /command-name &lt;args&gt; to run a workflow</div>';
+
+      chat.addCommandMessage('commands', html);
+    } catch (e) {
+      chat.addSystemMessage(`Error loading commands: ${e.message}`);
     }
   }
 

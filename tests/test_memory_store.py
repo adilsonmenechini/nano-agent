@@ -1,4 +1,5 @@
 """Tests for file-backed MemoryStore."""
+
 import os
 import tempfile
 
@@ -6,9 +7,6 @@ import pytest
 
 from nanoagent.memory.memory_store import MemoryStore, MemorySnapshot
 from nanoagent.memory.constants import (
-    DEFAULT_FAILURE_CHAR_LIMIT,
-    DEFAULT_MEMORY_CHAR_LIMIT,
-    DEFAULT_USER_CHAR_LIMIT,
     FAILURE_CATEGORIES,
 )
 
@@ -160,7 +158,9 @@ class TestMemoryStoreClear:
 class TestMemoryStoreFailure:
     def test_add_failure(self, tmp_dir):
         store = MemoryStore(memory_dir=tmp_dir)
-        store.add_failure("tool failed", category="tool-quirk", failure_reason="timeout")
+        store.add_failure(
+            "tool failed", category="tool-quirk", failure_reason="timeout"
+        )
         entries = store.get_entries("failure")
         assert len(entries) == 1
         assert "tool-quirk" in entries[0]
@@ -168,7 +168,9 @@ class TestMemoryStoreFailure:
 
     def test_add_failure_with_correction(self, tmp_dir):
         store = MemoryStore(memory_dir=tmp_dir)
-        store.add_failure("wrong output", category="correction", corrected_to="right output")
+        store.add_failure(
+            "wrong output", category="correction", corrected_to="right output"
+        )
         entries = store.get_entries("failure")
         assert "correction" in entries[0]
         assert "corrected" in entries[0]

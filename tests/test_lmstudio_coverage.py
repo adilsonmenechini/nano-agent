@@ -1,9 +1,9 @@
 """Additional lmstudio.py branch coverage for stream and tool-call parsing."""
+
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import openai
 
 from nanoagent.llm.lmstudio import LMStudioProvider
 
@@ -37,19 +37,28 @@ class TestLMStudioProviderStream:
         # usage is None; LMStudioProvider gracefully handles f-string style `usage`.
         p = LMStudioProvider("key", "url", "model")
         p.client = MagicMock()
-        p.client.chat.completions.create.return_value = iter([
-            MagicMock(choices=[], usage=None),
-        ])
+        p.client.chat.completions.create.return_value = iter(
+            [
+                MagicMock(choices=[], usage=None),
+            ]
+        )
         events = list(p._chat_stream([{"role": "user", "content": "hi"}]))
         assert events  # at least "done"
 
     def test_stream_with_system_prompt(self):
         p = LMStudioProvider("key", "url", "model")
         p.client = MagicMock()
-        p.client.chat.completions.create.return_value = iter([
-            MagicMock(choices=[MagicMock(delta=MagicMock(content="ok"))], usage=MagicMock(prompt_tokens=0, completion_tokens=0)),
-        ])
-        events = list(p._chat_stream([{"role": "user", "content": "hi"}], system_prompt="sys"))
+        p.client.chat.completions.create.return_value = iter(
+            [
+                MagicMock(
+                    choices=[MagicMock(delta=MagicMock(content="ok"))],
+                    usage=MagicMock(prompt_tokens=0, completion_tokens=0),
+                ),
+            ]
+        )
+        events = list(
+            p._chat_stream([{"role": "user", "content": "hi"}], system_prompt="sys")
+        )
         assert any(e.delta == "ok" for e in events)
         passed_messages = p.client.chat.completions.create.call_args.kwargs["messages"]
         assert {"role": "system", "content": "sys"} in passed_messages
@@ -57,9 +66,13 @@ class TestLMStudioProviderStream:
     def test_chat_stream_generator(self):
         p = LMStudioProvider("key", "url", "model")
         p.client = MagicMock()
-        p.client.chat.completions.create.return_value = iter([
-            MagicMock(choices=[], usage=MagicMock(prompt_tokens=0, completion_tokens=0)),
-        ])
+        p.client.chat.completions.create.return_value = iter(
+            [
+                MagicMock(
+                    choices=[], usage=MagicMock(prompt_tokens=0, completion_tokens=0)
+                ),
+            ]
+        )
         result = p.chat([{"role": "user", "content": "hi"}], stream=True)
         events = list(result)
         assert events

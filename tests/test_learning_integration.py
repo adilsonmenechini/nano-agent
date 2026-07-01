@@ -38,7 +38,11 @@ def test_three_similar_tasks_creates_proposal():
     for i in range(3):
         reflector.reflect(
             turn_id=f"sim-task-{i}",
-            tool_calls=[{"name": "grep_file"}, {"name": "read_file"}, {"name": "run_shell"}],
+            tool_calls=[
+                {"name": "grep_file"},
+                {"name": "read_file"},
+                {"name": "run_shell"},
+            ],
         )
 
     reflections = reflector.get_recent(limit=10)

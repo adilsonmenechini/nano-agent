@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import logging
 import threading
 import time
 from dataclasses import dataclass, field
@@ -19,7 +18,6 @@ from nanoagent.agent.errors import ProviderRetryableError
 from nanoagent.permissions import PermissionManager
 from nanoagent.truncation import OutputTruncator
 from nanoagent.agent.logging import AgentLogger
-from nanoagent.agent.errors import AgentError
 
 # ── Logger ──────────────────────────────────────────────────────────────────
 agent_logger = AgentLogger("nanoagent.agent")
@@ -35,8 +33,17 @@ class AgentState(Enum):
 
 _VALID_TRANSITIONS: dict[AgentState, set[AgentState]] = {
     AgentState.IDLE: {AgentState.THINKING},
-    AgentState.THINKING: {AgentState.EXECUTING_TOOLS, AgentState.AWAITING_INPUT, AgentState.IDLE, AgentState.ERROR},
-    AgentState.EXECUTING_TOOLS: {AgentState.THINKING, AgentState.AWAITING_INPUT, AgentState.ERROR},
+    AgentState.THINKING: {
+        AgentState.EXECUTING_TOOLS,
+        AgentState.AWAITING_INPUT,
+        AgentState.IDLE,
+        AgentState.ERROR,
+    },
+    AgentState.EXECUTING_TOOLS: {
+        AgentState.THINKING,
+        AgentState.AWAITING_INPUT,
+        AgentState.ERROR,
+    },
     AgentState.AWAITING_INPUT: {AgentState.IDLE},
     AgentState.ERROR: {AgentState.IDLE, AgentState.THINKING},
 }
@@ -162,6 +169,7 @@ class Agent:
         # Auto-load skills from DB
         try:
             from nanoagent.skills.loader import SkillsLoader, SkillContext
+
             ctx = SkillContext(tools=dict(self._tools.all()), memory=self.memory)
             db_skills = SkillsLoader.load_from_db(self.skill_storage, context=ctx)
             for name, wrapper in db_skills.items():
@@ -186,11 +194,14 @@ class Agent:
     def add_state_listener(self, listener: callable) -> None:
         self._state_listeners.append(listener)
 
-    def _transition(self, to_state: AgentState, reason: str = "", **metadata: object) -> None:
+    def _transition(
+        self, to_state: AgentState, reason: str = "", **metadata: object
+    ) -> None:
         from_state = self._state
         allowed = _VALID_TRANSITIONS.get(from_state, set())
         if to_state not in allowed:
             from nanoagent.agent.errors import StateTransitionError
+
             raise StateTransitionError(
                 f"Invalid transition: {from_state.name} -> {to_state.name}"
             )
@@ -229,7 +240,7 @@ class Agent:
     def execute_tool(self, name: str, arguments: dict) -> str:
         logger = AgentLogger.get()
         logger.tool_call(name, arguments)
-        import time
+
         start = time.monotonic()
         result = self._tools.execute(name, arguments)
         elapsed = time.monotonic() - start
@@ -330,6 +341,7 @@ class Agent:
                     )
                     if semantic_entries:
                         from nanoagent.agent.context import select_top_memories
+
                         texts = [e.content for e in semantic_entries]
                         selected = select_top_memories(texts, max_tokens=1000)
                         if selected:
@@ -366,8 +378,9 @@ class Agent:
             except ProviderRetryableError as e:
                 last_exc = e
                 if attempt < attempts_left - 1:
-                    wait = 1.0 * (2 ** attempt)
+                    wait = 1.0 * (2**attempt)
                     import time as _time
+
                     _time.sleep(wait)
                     continue
                 raise
@@ -400,7 +413,9 @@ class Agent:
         if turn is not None:
             stop_reason = getattr(turn, "start", lambda p: None)(prompt)
             if stop_reason and getattr(stop_reason, "value", None) in (
-                "done", "max_steps", "error",
+                "done",
+                "max_steps",
+                "error",
             ):
                 return "Turn blocked before execution.", messages if messages else []
 
@@ -440,7 +455,9 @@ class Agent:
             if turn is not None:
                 budget = getattr(turn, "budget", None)
                 if budget is not None and getattr(budget, "budget_exhausted", False):
-                    messages.append({"role": "assistant", "content": "Turn budget exhausted."})
+                    messages.append(
+                        {"role": "assistant", "content": "Turn budget exhausted."}
+                    )
                     return "Turn budget exhausted.", messages
 
             self.pause_event.wait()
@@ -519,23 +536,29 @@ class Agent:
                             self.on_tool_call(tc.name, tc.arguments)
                         if self.on_tool_result:
                             self.on_tool_result(tc.name, results[i])
-                        messages.append({
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": json.dumps(tc.arguments),
-                                },
-                            }],
-                        })
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": results[i],
-                        })
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": tc.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc.name,
+                                            "arguments": json.dumps(tc.arguments),
+                                        },
+                                    }
+                                ],
+                            }
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": results[i],
+                            }
+                        )
                 else:
                     for tc in response.tool_calls:
                         if self.on_tool_call:
@@ -543,23 +566,29 @@ class Agent:
                         result = self.execute_tool(tc.name, tc.arguments)
                         if self.on_tool_result:
                             self.on_tool_result(tc.name, result)
-                        messages.append({
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": json.dumps(tc.arguments),
-                                },
-                            }],
-                        })
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": result,
-                        })
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": tc.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc.name,
+                                            "arguments": json.dumps(tc.arguments),
+                                        },
+                                    }
+                                ],
+                            }
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": result,
+                            }
+                        )
 
                 if session_id:
                     self.memory.save_session(
@@ -826,7 +855,9 @@ class Agent:
                     self.loop_warning_count += 1
                     if self.loop_warning_count >= 3:
                         self._transition(AgentState.AWAITING_INPUT, "loop detected")
-                        yield StreamEvent(type="content", delta="Auto-paused: loop detected.")
+                        yield StreamEvent(
+                            type="content", delta="Auto-paused: loop detected."
+                        )
                         yield StreamEvent(type="done")
                         return
                 else:
@@ -839,23 +870,29 @@ class Agent:
                     result = self.execute_tool(tc.name, tc.arguments)
                     if self.on_tool_result:
                         self.on_tool_result(tc.name, result)
-                    messages.append({
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [{
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.name,
-                                "arguments": json.dumps(tc.arguments),
-                            },
-                        }],
-                    })
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": tc.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc.name,
+                                        "arguments": json.dumps(tc.arguments),
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": result,
+                        }
+                    )
 
                 self._transition(AgentState.THINKING, "tool results ready")
             else:

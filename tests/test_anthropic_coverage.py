@@ -1,12 +1,10 @@
 """Additional anthropic.py branch coverage for stream + tool_use."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import anthropic
-import pytest
 
-from nanoagent.llm.base import StreamEvent, ToolCall
 
 
 def _mk_text_delta_chunk(text):
@@ -28,13 +26,16 @@ class TestAnthropicStream:
             client = MagicMock()
             MockAnthropic.return_value = client
             from nanoagent.llm.anthropic import AnthropicProvider
+
             p = AnthropicProvider("key", "url", "model")
             p.client = client
-            client.messages.create.return_value = iter([
-                _mk_text_delta_chunk("h"),
-                _mk_text_delta_chunk("i"),
-                MagicMock(type="content_block_stop"),
-            ])
+            client.messages.create.return_value = iter(
+                [
+                    _mk_text_delta_chunk("h"),
+                    _mk_text_delta_chunk("i"),
+                    MagicMock(type="content_block_stop"),
+                ]
+            )
             events = list(p._chat_stream([{"role": "user", "content": "hi"}]))
             texts = [e.delta for e in events if e.type == "content"]
             assert texts == ["h", "i"]
@@ -45,11 +46,14 @@ class TestAnthropicStream:
             client = MagicMock()
             MockAnthropic.return_value = client
             from nanoagent.llm.anthropic import AnthropicProvider
+
             p = AnthropicProvider("key", "url", "model")
             p.client = client
-            client.messages.create.return_value = iter([
-                _mk_tool_start_chunk("id1", "fn", {"a": 1}),
-            ])
+            client.messages.create.return_value = iter(
+                [
+                    _mk_tool_start_chunk("id1", "fn", {"a": 1}),
+                ]
+            )
             events = list(p._chat_stream([{"role": "user", "content": "hi"}]))
             tcs = [e for e in events if e.type == "tool_call"]
             assert len(tcs) == 1
@@ -62,6 +66,7 @@ class TestAnthropicStream:
             client = MagicMock()
             MockAnthropic.return_value = client
             from nanoagent.llm.anthropic import AnthropicProvider
+
             p = AnthropicProvider("key", "url", "model")
             p.client = client
             text_block = MagicMock()
@@ -78,15 +83,18 @@ class TestAnthropicToolCallInChat:
             client = MagicMock()
             MockAnthropic.return_value = client
             from nanoagent.llm.anthropic import AnthropicProvider
+
             p = AnthropicProvider("key", "url", "model")
             p.client = client
             text_block = MagicMock(type="text", text="response")
             tc = MagicMock(type="tool_use", id="id1")
             tc.name = "search"
             tc.input = {"q": "test"}
-            mock_resp = MagicMock(content=[text_block, tc],
-                                  stop_reason="tool_use",
-                                  usage=MagicMock(input_tokens=5, output_tokens=10))
+            mock_resp = MagicMock(
+                content=[text_block, tc],
+                stop_reason="tool_use",
+                usage=MagicMock(input_tokens=5, output_tokens=10),
+            )
             client.messages.create.return_value = mock_resp
             result = p.chat([{"role": "user", "content": "hi"}])
             assert result.content == "response"

@@ -19,7 +19,9 @@ class EvolutionPipeline:
             iterations=self.config.iterations,
         )
 
-    def evolve(self, slug: str, iterations: int | None = None, eval_source: str | None = None) -> dict:
+    def evolve(
+        self, slug: str, iterations: int | None = None, eval_source: str | None = None
+    ) -> dict:
         skill = self.skill_storage.get_skill(slug)
         if not skill:
             return {"error": f"Skill '{slug}' not found", "success": False}

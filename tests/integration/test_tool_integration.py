@@ -1,4 +1,5 @@
 """Integration tests for tool system: permissions + truncation + registry."""
+
 from __future__ import annotations
 
 from nanoagent.permissions import PermissionManager, PermissionRule, PermissionMode
@@ -9,9 +10,14 @@ from nanoagent.truncation import OutputTruncator
 def test_tool_registry_with_permissions_and_truncation():
     """PermissionManager + OutputTruncator + ToolRegistry work together."""
     pm = PermissionManager(default_mode="allow")
-    pm.add_rule(PermissionRule(
-        tool_name="run_shell", match_type="prefix", pattern="rm", mode=PermissionMode.DENY,
-    ))
+    pm.add_rule(
+        PermissionRule(
+            tool_name="run_shell",
+            match_type="prefix",
+            pattern="rm",
+            mode=PermissionMode.DENY,
+        )
+    )
     trunc = OutputTruncator(max_chars=10)
     registry = ToolRegistry(permission_manager=pm, output_truncator=trunc)
 
@@ -35,9 +41,14 @@ def test_tool_registry_with_permissions_and_truncation():
 
 def test_permission_manager_blocks_denied_tools():
     pm = PermissionManager(default_mode="allow")
-    pm.add_rule(PermissionRule(
-        tool_name="run_shell", match_type="prefix", pattern="sudo", mode=PermissionMode.DENY,
-    ))
+    pm.add_rule(
+        PermissionRule(
+            tool_name="run_shell",
+            match_type="prefix",
+            pattern="sudo",
+            mode=PermissionMode.DENY,
+        )
+    )
     registry = ToolRegistry(permission_manager=pm)
 
     from nanoagent.tool import Tool

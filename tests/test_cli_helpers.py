@@ -1,9 +1,9 @@
 """Unit tests for cli.py helper functions."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from nanoagent.cli import (
     _handle_history,
@@ -26,12 +26,14 @@ from nanoagent.cli import (
 class TestPrintHelpers:
     def test_print_banner_no_crash(self):
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _print_banner()
         assert m.called
 
     def test_print_welcome_no_crash(self):
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _print_welcome()
         assert m.called
@@ -40,29 +42,40 @@ class TestPrintHelpers:
 class TestHandleHistory:
     def test_empty(self):
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_history([])
         assert m.called
 
     def test_user_and_assistant(self):
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
-            _handle_history([
-                {"role": "user", "content": "hi"},
-                {"role": "assistant", "content": "hello"},
-            ])
+            _handle_history(
+                [
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "hello"},
+                ]
+            )
         assert any("user:" in str(c) for c in m.call_args_list)
 
     def test_tool_assistant_message(self):
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
-            _handle_history([
-                {"role": "assistant", "tool_calls": [{"function": {"name": "search"}}]},
-            ])
+            _handle_history(
+                [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"function": {"name": "search"}}],
+                    },
+                ]
+            )
         assert any("tool" in str(c).lower() for c in m.call_args_list)
 
     def test_tool_result_role_no_content(self):
         from nanoagent.cli import console
+
         # role=tool with empty content → hits the "tool result" branch (line 343-344)
         with patch.object(console, "print") as m:
             _handle_history([{"role": "tool"}])
@@ -70,6 +83,7 @@ class TestHandleHistory:
 
     def test_long_content(self):
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_history([{"role": "user", "content": "a" * 500}])
         assert m.called
@@ -80,6 +94,7 @@ class TestHandleTools:
         agent = MagicMock()
         agent.tools = {}
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_tools(agent)
         assert m.called
@@ -91,6 +106,7 @@ class TestHandleTools:
             "t2": MagicMock(description=None),
         }
         from nanoagent.cli import console
+
         with patch.object(console, "print"):
             _handle_tools(agent)
 
@@ -100,6 +116,7 @@ class TestHandleSkills:
         agent = MagicMock()
         agent.skill_storage.list_skills.return_value = []
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_skills(agent)
         assert m.called
@@ -111,6 +128,7 @@ class TestHandleSkills:
             {"name": "calc", "description": "Do math"},
         ]
         from nanoagent.cli import console
+
         with patch.object(console, "print"):
             _handle_skills(agent)
         # Calling should complete without exceptions.
@@ -121,6 +139,7 @@ class TestHandleMemorySearch:
     def test_empty_query(self):
         agent = MagicMock()
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_memory_search("", agent)
         assert any("Usage" in str(c) for c in m.call_args_list)
@@ -130,6 +149,7 @@ class TestHandleMemorySearch:
         agent = MagicMock()
         agent.memory.search.return_value = []
         from nanoagent.cli import console
+
         with patch.object(console, "print"):
             _handle_memory_search("alice", agent)
         agent.memory.search.assert_called_once_with("alice", limit=20)
@@ -141,6 +161,7 @@ class TestHandleMemorySearch:
             MagicMock(target="t2", content="other", key=""),
         ]
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_memory_search("query", agent)
         assert m.called
@@ -149,20 +170,26 @@ class TestHandleMemorySearch:
 class TestHandleShell:
     def test_shell_success(self, tmp_path):
         from nanoagent.cli import console
+
         sh_file = tmp_path / "s.py"
         sh_file.write_text("print('ok')")
-        with patch("nanoagent.cli.subprocess.run") as mock_run, \
-             patch.object(console, "print"):
+        with (
+            patch("nanoagent.cli.subprocess.run") as mock_run,
+            patch.object(console, "print"),
+        ):
             mock_run.return_value = MagicMock(returncode=0, stdout="out\n", stderr="")
             _handle_shell(str(sh_file))
         mock_run.assert_called_once()
 
     def test_shell_failure(self, tmp_path):
         from nanoagent.cli import console
+
         sh_file = tmp_path / "bad.py"
         sh_file.write_text("raise")
-        with patch("nanoagent.cli.subprocess.run") as mock_run, \
-             patch.object(console, "print") as m:
+        with (
+            patch("nanoagent.cli.subprocess.run") as mock_run,
+            patch.object(console, "print") as m,
+        ):
             mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="err")
             _handle_shell(str(sh_file))
         assert m.called
@@ -173,6 +200,7 @@ class TestHandleJobs:
         mgr = MagicMock()
         mgr.list_jobs.return_value = []
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_jobs(mgr)
         assert m.called
@@ -183,6 +211,7 @@ class TestHandleJobs:
             MagicMock(job_id="x", status="queued", prompt="p"),
         ]
         from nanoagent.cli import console
+
         with patch.object(console, "print"):
             _handle_jobs(mgr)
         assert mgr.list.called
@@ -195,6 +224,7 @@ class TestHandlePauseResumeCancel:
         mgr.latest.return_value = job
         job.agent.pause_event = MagicMock()
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_pause(mgr)
         assert m.called
@@ -203,6 +233,7 @@ class TestHandlePauseResumeCancel:
         mgr = MagicMock()
         mgr.latest.return_value = None
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_pause(mgr)
         assert m.called
@@ -213,6 +244,7 @@ class TestHandlePauseResumeCancel:
         mgr.latest.return_value = job
         job.agent.pause_event = MagicMock()
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_resume(mgr)
         assert m.called
@@ -221,6 +253,7 @@ class TestHandlePauseResumeCancel:
         mgr = MagicMock()
         mgr.latest.return_value = None
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_resume(mgr)
         assert m.called
@@ -232,6 +265,7 @@ class TestHandlePauseResumeCancel:
         job.agent = MagicMock()
         job.agent.memory = MagicMock()
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_cancel(mgr)
         assert m.called
@@ -240,6 +274,7 @@ class TestHandlePauseResumeCancel:
         mgr = MagicMock()
         mgr.latest.return_value = None
         from nanoagent.cli import console
+
         with patch.object(console, "print") as m:
             _handle_cancel(mgr)
         assert m.called
@@ -258,8 +293,18 @@ class TestHandleMemoryInsights:
         agent = MagicMock()
         cursor = MagicMock()
         cursor.fetchall.return_value = [
-            {"target": "user", "cnt": 5, "oldest": 1700000000.0, "newest": 1700000100.0},
-            {"target": "assistant", "cnt": 3, "oldest": 1700000050.0, "newest": 1700000099.0},
+            {
+                "target": "user",
+                "cnt": 5,
+                "oldest": 1700000000.0,
+                "newest": 1700000100.0,
+            },
+            {
+                "target": "assistant",
+                "cnt": 3,
+                "oldest": 1700000050.0,
+                "newest": 1700000099.0,
+            },
         ]
         agent.memory.conn.execute.return_value = cursor
         with patch("nanoagent.cli.console.print"):
@@ -287,8 +332,10 @@ class TestHandleMemoryForget:
             {"id": 1, "target": "t", "key": "k", "content": "c"},
             {"id": 2, "target": "t", "key": "k", "content": "c2"},
         ]
-        with patch("nanoagent.cli.console.print"), \
-             patch.object(agent.memory.conn, "commit") as mock_commit:
+        with (
+            patch("nanoagent.cli.console.print"),
+            patch.object(agent.memory.conn, "commit") as mock_commit,
+        ):
             _handle_memory_forget("/memory-forget k", agent)
         mock_commit.assert_called_once()
         calls = agent.memory.conn.execute.call_args_list
@@ -310,7 +357,7 @@ class TestHandleMemoryConsolidate:
         agent.memory.consolidate_dedup.return_value = 0
         agent.memory.conn.execute.return_value.fetchall.return_value = []
         agent.llm_provider = None
-        
+
         with patch("nanoagent.cli.console.print"):
             _handle_memory_consolidate(agent)
         agent.memory.consolidate_dedup.assert_called_once()
@@ -325,7 +372,7 @@ class TestHandleMemoryConsolidate:
             {"target": "user", "cnt": 5}
         ]
         agent.llm_provider = None
-        
+
         with patch("nanoagent.cli.console.print"):
             _handle_memory_consolidate(agent)
         agent.memory.consolidate_dedup.assert_called_once()
@@ -334,7 +381,7 @@ class TestHandleMemoryConsolidate:
 
 class TestRunWithStatus:
     """Test _run_with_status which has many uncovered lines."""
-    
+
     def test_empty_agent(self):
         """Test with agent that has no tools/skills."""
         agent = MagicMock()
@@ -345,6 +392,7 @@ class TestRunWithStatus:
         # Just test it's callable
         try:
             from nanoagent.cli import _run_with_status
+
             # We can't easily run it due to async/threading
             # Just verify it exists and can be imported
             assert callable(_run_with_status)
@@ -356,6 +404,7 @@ class TestPrintFullHelp:
     def test_help_prints(self):
         """Test that _print_full_help runs."""
         from nanoagent.cli import _print_full_help
+
         with patch("nanoagent.cli.console.print"):
             _print_full_help()
 
@@ -364,6 +413,7 @@ class TestPrintBannerWelcome:
     def test_banner_and_welcome(self):
         """Test banner and welcome prints."""
         from nanoagent.cli import _print_banner, _print_welcome
+
         with patch("nanoagent.cli.console.print"):
             _print_banner()
             _print_welcome()
