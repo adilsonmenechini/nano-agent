@@ -70,32 +70,8 @@ class CommandRouter {
         chat.addSystemMessage('Operation cancelled.');
         return true;
 
-      case '/memory-search':
-        if (!args) {
-          chat.addSystemMessage('Usage: /memory-search <query>');
-          return true;
-        }
-        await this._handleMemorySearch(args, chat);
-        return true;
-
-      case '/memory-insights':
-        await this._handleMemoryInsights(chat);
-        return true;
-
-      case '/memory-consolidate':
-        await this._handleMemoryConsolidate(chat);
-        return true;
-
-      case '/memory-forget':
-        if (args === '--all') {
-          await this._handleMemoryForgetAll(chat);
-        } else if (args.startsWith('--target ')) {
-          await this._handleMemoryForgetTarget(args.slice(9).trim(), chat);
-        } else if (args) {
-          await this._handleMemoryForgetKey(args, chat);
-        } else {
-          chat.addSystemMessage('Usage: /memory-forget <key> | --all | --target <memory|user|failure>');
-        }
+      case '/memory':
+        await this._handleMemory(args, chat);
         return true;
 
       case '/exit':
@@ -118,12 +94,7 @@ class CommandRouter {
       { cmd: '/tools', desc: 'List registered tools' },
       { cmd: '/skills', desc: 'List loaded skills' },
       { cmd: '/cancel', desc: 'Cancel the current response' },
-      { cmd: '/memory-search <q>', desc: 'Search memories' },
-      { cmd: '/memory-insights', desc: 'Show memory statistics' },
-      { cmd: '/memory-consolidate', desc: 'Consolidate memories' },
-      { cmd: '/memory-forget <key>', desc: 'Remove memory by key' },
-      { cmd: '/memory-forget --all', desc: 'Remove all memories' },
-      { cmd: '/memory-forget --target <t>', desc: 'Remove all memories for a target' },
+      { cmd: '/memory', desc: 'Memory commands: search, insights, consolidate, forget' },
       { cmd: '!<command>', desc: 'Run a shell command' },
     ];
 
@@ -230,9 +201,53 @@ class CommandRouter {
     }
   }
 
-  // ─── Memory Search ───────────────────────────────────────────────────
+  // ─── Memory (unified: /memory search|insights|consolidate|forget) ─────
 
-  async _handleMemorySearch(query, chat) {
+  async _handleMemory(args, chat) {
+    const parts = args.split(/\s+/);
+    const sub = (parts[0] || '').toLowerCase();
+    const rest = parts.slice(1).join(' ');
+
+    switch (sub) {
+      case 'search':
+        if (!rest) {
+          chat.addSystemMessage('Usage: /memory search <query>');
+          return;
+        }
+        await this._memorySearch(rest, chat);
+        break;
+
+      case 'insights':
+      case 'stats':
+        await this._memoryInsights(chat);
+        break;
+
+      case 'consolidate':
+        await this._memoryConsolidate(chat);
+        break;
+
+      case 'forget':
+      case 'delete':
+      case 'rm':
+        await this._memoryForget(rest, chat);
+        break;
+
+      default:
+        chat.addCommandMessage('memory',
+          '<strong>/memory &lt;subcommand&gt; [args]</strong><br><br>' +
+          '<table style="width:100%; border-collapse: collapse;">' +
+          '<tr><td style="padding: 4px 12px 4px 0; font-family: monospace; color: #8b5cf6; white-space: nowrap;">/memory search &lt;q&gt;</td><td style="padding: 4px 0; color: #9ca3af;">Search memories</td></tr>' +
+          '<tr><td style="padding: 4px 12px 4px 0; font-family: monospace; color: #8b5cf6; white-space: nowrap;">/memory insights</td><td style="padding: 4px 0; color: #9ca3af;">Show memory statistics</td></tr>' +
+          '<tr><td style="padding: 4px 12px 4px 0; font-family: monospace; color: #8b5cf6; white-space: nowrap;">/memory consolidate</td><td style="padding: 4px 0; color: #9ca3af;">Consolidate memories</td></tr>' +
+          '<tr><td style="padding: 4px 12px 4px 0; font-family: monospace; color: #8b5cf6; white-space: nowrap;">/memory forget &lt;key&gt;</td><td style="padding: 4px 0; color: #9ca3af;">Remove memory by key</td></tr>' +
+          '<tr><td style="padding: 4px 12px 4px 0; font-family: monospace; color: #8b5cf6; white-space: nowrap;">/memory forget --all</td><td style="padding: 4px 0; color: #9ca3af;">Remove all memories</td></tr>' +
+          '<tr><td style="padding: 4px 12px 4px 0; font-family: monospace; color: #8b5cf6; white-space: nowrap;">/memory forget --target &lt;t&gt;</td><td style="padding: 4px 0; color: #9ca3af;">Remove by target type</td></tr>' +
+          '</table>'
+        );
+    }
+  }
+
+  async _memorySearch(query, chat) {
     try {
       const resp = await fetch(`/api/memory/search?q=${encodeURIComponent(query)}&limit=15`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -257,15 +272,13 @@ class CommandRouter {
         html += `</div>`;
       }
 
-      chat.addCommandMessage('memory-search', html);
+      chat.addCommandMessage('/memory search', html);
     } catch (e) {
       chat.addSystemMessage(`Error searching memory: ${e.message}`);
     }
   }
 
-  // ─── Memory Insights ─────────────────────────────────────────────────
-
-  async _handleMemoryInsights(chat) {
+  async _memoryInsights(chat) {
     try {
       const resp = await fetch('/api/memory/insights');
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -287,15 +300,13 @@ class CommandRouter {
       }
       html += '</table>';
 
-      chat.addCommandMessage('memory-insights', html);
+      chat.addCommandMessage('/memory insights', html);
     } catch (e) {
       chat.addSystemMessage(`Error getting memory stats: ${e.message}`);
     }
   }
 
-  // ─── Memory Consolidate ──────────────────────────────────────────────
-
-  async _handleMemoryConsolidate(chat) {
+  async _memoryConsolidate(chat) {
     chat.addSystemMessage('Consolidating memories...');
     try {
       const resp = await fetch('/api/memory/consolidate', { method: 'POST' });
@@ -311,18 +322,20 @@ class CommandRouter {
     }
   }
 
-  // ─── Memory Forget ───────────────────────────────────────────────────
-
-  async _handleMemoryForgetAll(chat) {
-    chat.addSystemMessage('This action will delete ALL memories. Not implemented via web UI for safety — use the CLI.');
-  }
-
-  async _handleMemoryForgetTarget(target, chat) {
-    chat.addSystemMessage(`Memory deletion for target '${target}' is not available in the web UI. Use the CLI.`);
-  }
-
-  async _handleMemoryForgetKey(key, chat) {
-    chat.addSystemMessage(`Memory deletion by key '${key}' is not available in the web UI. Use the CLI.`);
+  async _memoryForget(args, chat) {
+    if (!args) {
+      chat.addSystemMessage('Usage: /memory forget <key> | --all | --target <memory|user|failure>');
+      return;
+    }
+    if (args === '--all') {
+      chat.addSystemMessage('This action will delete ALL memories. Not implemented via web UI for safety — use the CLI.');
+    } else if (args.startsWith('--target ')) {
+      const target = args.slice(9).trim();
+      chat.addSystemMessage(`Memory deletion for target '${target}' is not available in the web UI. Use the CLI.`);
+    } else {
+      const key = args.trim();
+      chat.addSystemMessage(`Memory deletion by key '${key}' is not available in the web UI. Use the CLI.`);
+    }
   }
 
   // ─── Shell ───────────────────────────────────────────────────────────
